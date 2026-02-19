@@ -12,6 +12,7 @@ import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
 import com.google.mediapipe.tasks.components.containers.Connection
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
+import java.lang.Float.min
 
 class OverlayView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -94,12 +95,26 @@ class OverlayView @JvmOverloads constructor(
 
         // 绘制面部关键点（传入 List<Int> 类型常量）
         faceResult?.faceLandmarks()?.forEach { faceLandmarks ->
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, rightEyePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, leftEyePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, facePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, facePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS, rightEyePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS, leftEyePaint)
+            // 1. 计算等比缩放因子（参考示例，取宽高缩放的最小值保证完整显示）
+            val scaleFactor = min(scaleX, scaleY)
+            // 2. 计算缩放后的图像尺寸
+            val scaledImageWidth = previewWidth * scaleFactor
+            val scaledImageHeight = previewHeight * scaleFactor
+            // 3. 计算居中偏移量（让面部关键点在View中居中）
+            val offsetX = (width - scaledImageWidth) / 2f
+            val offsetY = (height - scaledImageHeight) / 2f
+            // 绘制面部各区域连接点（使用重构后的面部专用绘制函数）
+            drawFaceConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, rightEyePaint, scaleFactor, offsetX, offsetY)
+            drawFaceConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, leftEyePaint, scaleFactor, offsetX, offsetY)
+            drawFaceConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, facePaint, scaleFactor, offsetX, offsetY)
+            drawFaceConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, facePaint, scaleFactor, offsetX, offsetY)
+
+//            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, rightEyePaint)
+//            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, leftEyePaint)
+//            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, facePaint)
+//            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, facePaint)
+//            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS, rightEyePaint)
+//            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS, leftEyePaint)
         }
 
         // 绘制手部关键点（传入 Set<Connection> 类型常量）
@@ -119,25 +134,38 @@ class OverlayView @JvmOverloads constructor(
         }
     }
 
-    // ===================== 通用绘制函数（兼容两种类型） =====================
-    /**
-     * 通用绘制连接点函数（适配面部 List<Int> 类型）
-     */
-    private fun drawConnectors(
+    private fun drawFaceConnectors(
         canvas: Canvas,
         landmarks: List<NormalizedLandmark>,
-        connections: List<Int>,
-        paint: Paint
+        connections: Set<Connection>,
+        paint: Paint,
+        scaleFactor: Float,
+        offsetX: Float,
+        offsetY: Float
     ) {
-        for (i in 0 until connections.size step 2) {
-            if (i + 1 >= connections.size) break
-            val startIdx = connections[i]
-            val endIdx = connections[i + 1]
-            if (startIdx >= landmarks.size || endIdx >= landmarks.size) continue
+        // 遍历每个Connection对象（包含start/end索引）
+        for (connection in connections) {
+            // 关键修复：调用start()/end()获取Int类型索引（而非直接用Connection对象）
+            val startIdx = connection.start()
+            val endIdx = connection.end()
 
-            val start = landmarks[startIdx]
-            val end = landmarks[endIdx]
-            drawLine(canvas, start, end, paint)
+            // 严谨的边界检查（Int索引的合法性）
+            if (startIdx < 0 || endIdx < 0 || startIdx >= landmarks.size || endIdx >= landmarks.size) {
+                continue
+            }
+
+            // 获取起始/结束关键点（此时下标是Int，无类型错误）
+            val startLandmark = landmarks[startIdx]
+            val endLandmark = landmarks[endIdx]
+
+            // 坐标转换（镜像+等比缩放+居中偏移）
+            val startX = (1 - startLandmark.x()) * previewWidth * scaleFactor + offsetX
+            val startY = (1 - startLandmark.y()) * previewHeight * scaleFactor + offsetY
+            val endX = (1 - endLandmark.x()) * previewWidth * scaleFactor + offsetX
+            val endY = (1 - endLandmark.y()) * previewHeight * scaleFactor + offsetY
+
+            // 绘制连接线段
+            canvas.drawLine(startX, startY, endX, endY, paint)
         }
     }
 
