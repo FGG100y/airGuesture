@@ -66,27 +66,25 @@ class OverlayView @JvmOverloads constructor(
     }
 
     // ===================== 坐标转换函数（适配镜像/旋转） =====================
-//    /**
-//     * 归一化 X 坐标 → View 实际像素 X 坐标（适配前置摄像头镜像）
-//     * @param x MediaPipe 返回的归一化 X 坐标（0~1）
-//     */
-//    private fun translateX(x: Float): Float {
-//        // 前置摄像头镜像后，X 坐标需要反转（1 - x）再缩放
-//        val mirroredX = 1 - x // 适配前置摄像头的水平镜像
-//        return mirroredX * previewWidth * scaleX
-//    }
-//
-//    /**
-//     * 归一化 Y 坐标 → View 实际像素 Y 坐标
-//     * @param y MediaPipe 返回的归一化 Y 坐标（0~1）
-//     */
+    /**
+     * 归一化 X 坐标 → View 实际像素 X 坐标（适配前置摄像头镜像）
+     * @param x MediaPipe 返回的归一化 X 坐标（0~1）
+     */
+    private fun translateX(x: Float): Float {
+        // 前置摄像头镜像后，X 坐标需要反转（1 - x）再缩放
+        val mirroredX = 1 - x // 适配前置摄像头的水平镜像
+        return mirroredX * previewWidth * scaleX
+    }
+
+    /**
+     * 归一化 Y 坐标 → View 实际像素 Y 坐标
+     * @param y MediaPipe 返回的归一化 Y 坐标（0~1）
+     */
 //    private fun translateY(y: Float): Float = y * previewHeight * scaleY
-//
-    // 修复后：无需手动反转 X 坐标（镜像已在转换阶段处理）
-    private fun translateX(x: Float): Float = x * previewWidth * scaleX
-
-    private fun translateY(y: Float): Float = y * previewHeight * scaleY
-
+    private fun translateY(y: Float): Float {
+        val mirroredY = 1 - y
+        return mirroredY * previewHeight * scaleY
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
