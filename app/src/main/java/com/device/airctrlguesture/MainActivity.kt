@@ -2,8 +2,10 @@ package com.device.airctrlguesture
 
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.media.Image
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -13,11 +15,10 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.camera.core.processing.YuvToRgbConverter
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
-import com.google.mediapipe.framework.image.MediaImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker.FaceLandmarkerOptions
@@ -29,7 +30,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-
 
 class MainActivity : AppCompatActivity() {
     // 手动声明控件（替代 View Binding）
@@ -43,6 +43,8 @@ class MainActivity : AppCompatActivity() {
 
     // 权限请求码
     private val REQUEST_CAMERA_PERMISSION = 1001
+    // 标记是否是前置摄像头（用于镜像处理）
+    private var isFrontCamera = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,7 +126,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 启动相机（保持不变）
+    // 启动相机（保持不变，新增前置摄像头标记）
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
@@ -148,6 +150,7 @@ class MainActivity : AppCompatActivity() {
 
             // 选择前置摄像头
             val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+            isFrontCamera = true // 标记为前置摄像头
 
             try {
                 cameraProvider?.unbindAll()
@@ -163,42 +166,38 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    // 核心修复：使用 YuvToArgbConverter 处理 YUV 转 ARGB，解决缓冲区不足问题
     private fun processImage(imageProxy: ImageProxy) {
-        val mediaImage: Image = imageProxy.image ?: run {
+        val frameTime = SystemClock.uptimeMillis()
+        val mediaImage = imageProxy.image ?: run {
             imageProxy.close()
             return
         }
 
-        // 关键修复：YUV_420_888 → RGBA_8888 Bitmap → MPImage
-        val mpImage: MPImage = try {
-            // 1. 将 YUV Image 转换为 RGBA_8888 格式的 Bitmap
-            val bitmap = mediaImage.toRgbaBitmap(imageProxy.width, imageProxy.height)
-            // 2. 通过 Bitmap 构建 MPImage（MediaPipe 官方支持）
-            com.google.mediapipe.framework.image.BitmapImageBuilder(bitmap)
-                .setRotation(imageProxy.imageInfo.rotationDegrees) // 适配相机旋转角度
+        try {
+            // 1. YUV_420_888 转 ARGB_8888（前置摄像头同时做镜像）
+            val argbBitmap = YuvToArgbConverter.convert(mediaImage, applyMirror = isFrontCamera)
+
+            // 2. 旋转位图适配相机预览方向
+            val rotatedBitmap = YuvToArgbConverter.rotateBitmap(
+                argbBitmap,
+                imageProxy.imageInfo.rotationDegrees
+            )
+
+            // 3. 构建 MPImage（MediaPipe 官方推荐方式）
+            val mpImage: MPImage = BitmapImageBuilder(rotatedBitmap)
                 .build()
+
+            // 4. 提交帧到面部/手部检测器（异步）
+            faceLandmarker?.detectAsync(mpImage, frameTime)
+            handLandmarker?.detectAsync(mpImage, frameTime)
+
         } catch (e: Exception) {
             Log.e("ImageConversion", "图像转换失败: ${e.message}", e)
-            imageProxy.close()
-            return
-        }
-
-        // 提交帧到面部/手部检测器（异步）
-        faceLandmarker?.detectAsync(mpImage, imageProxy.imageInfo.timestamp)
-        handLandmarker?.detectAsync(mpImage, imageProxy.imageInfo.timestamp)
-
-        // 延迟关闭 ImageProxy（确保检测器完成处理）
-        cameraExecutor.execute {
+        } finally {
+            // 5. 必须关闭 ImageProxy 释放相机资源
             imageProxy.close()
         }
-    }
-
-    // 新增：YUV_420_888 Image 转 RGBA_8888 Bitmap 的工具函数
-    private fun Image.toRgbaBitmap(width: Int, height: Int): Bitmap {
-        val yuvToRgbConverter = YuvToRgbConverter(this@MainActivity)
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        yuvToRgbConverter.yuvToRgb(this, bitmap)
-        return bitmap
     }
 
     // 检查权限（保持不变）

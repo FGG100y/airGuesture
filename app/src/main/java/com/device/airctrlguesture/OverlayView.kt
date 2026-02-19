@@ -65,21 +65,32 @@ class OverlayView @JvmOverloads constructor(
         invalidate() // 触发重绘
     }
 
-    // ===================== 坐标转换函数（修复核心） =====================
-    /**
-     * 归一化 X 坐标 → View 实际像素 X 坐标
-     * @param x MediaPipe 返回的归一化 X 坐标（0~1）
-     */
+    // ===================== 坐标转换函数（适配镜像/旋转） =====================
+//    /**
+//     * 归一化 X 坐标 → View 实际像素 X 坐标（适配前置摄像头镜像）
+//     * @param x MediaPipe 返回的归一化 X 坐标（0~1）
+//     */
+//    private fun translateX(x: Float): Float {
+//        // 前置摄像头镜像后，X 坐标需要反转（1 - x）再缩放
+//        val mirroredX = 1 - x // 适配前置摄像头的水平镜像
+//        return mirroredX * previewWidth * scaleX
+//    }
+//
+//    /**
+//     * 归一化 Y 坐标 → View 实际像素 Y 坐标
+//     * @param y MediaPipe 返回的归一化 Y 坐标（0~1）
+//     */
+//    private fun translateY(y: Float): Float = y * previewHeight * scaleY
+//
+    // 修复后：无需手动反转 X 坐标（镜像已在转换阶段处理）
     private fun translateX(x: Float): Float = x * previewWidth * scaleX
 
-    /**
-     * 归一化 Y 坐标 → View 实际像素 Y 坐标
-     * @param y MediaPipe 返回的归一化 Y 坐标（0~1）
-     */
     private fun translateY(y: Float): Float = y * previewHeight * scaleY
+
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        // 计算缩放比例：OverlayView 实际尺寸 / 预览图像尺寸
         scaleX = width.toFloat() / previewWidth.toFloat()
         scaleY = height.toFloat() / previewHeight.toFloat()
 
@@ -89,9 +100,8 @@ class OverlayView @JvmOverloads constructor(
             drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, leftEyePaint)
             drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, facePaint)
             drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, facePaint)
-//            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW, rightEyePaint)
-//            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW, leftEyePaint)
             drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS, rightEyePaint)
+            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS, leftEyePaint)
         }
 
         // 绘制手部关键点（传入 Set<Connection> 类型常量）
@@ -99,7 +109,7 @@ class OverlayView @JvmOverloads constructor(
             // 调用通用绘制函数，传入手部的 Set<Connection> 常量
             drawConnectors(canvas, handLandmarks, HandLandmarker.HAND_CONNECTIONS, handPaint)
 
-            // 绘制手部关键点（保留原有逻辑）
+            // 绘制手部关键点
             handLandmarks.forEach { landmark ->
                 canvas.drawCircle(
                     translateX(landmark.x()),
@@ -113,12 +123,8 @@ class OverlayView @JvmOverloads constructor(
 
     // ===================== 通用绘制函数（兼容两种类型） =====================
     /**
-     * 通用绘制连接点函数
-     * 适配：
-     * 1. 面部：List<Int> 类型连接索引
-     * 2. 手部：Set<Connection> 类型连接对象
+     * 通用绘制连接点函数（适配面部 List<Int> 类型）
      */
-    // 重载1：适配面部的 List<Int> 类型
     private fun drawConnectors(
         canvas: Canvas,
         landmarks: List<NormalizedLandmark>,
@@ -137,7 +143,9 @@ class OverlayView @JvmOverloads constructor(
         }
     }
 
-    // 重载2：适配手部的 Set<Connection> 类型
+    /**
+     * 通用绘制连接点函数（适配手部 Set<Connection> 类型）
+     */
     private fun drawConnectors(
         canvas: Canvas,
         landmarks: List<NormalizedLandmark>,
@@ -155,7 +163,9 @@ class OverlayView @JvmOverloads constructor(
         }
     }
 
-    // 抽取公共画线逻辑（减少冗余）
+    /**
+     * 公共画线逻辑
+     */
     private fun drawLine(
         canvas: Canvas,
         start: NormalizedLandmark,
