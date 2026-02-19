@@ -12,170 +12,205 @@ import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
 import com.google.mediapipe.tasks.components.containers.Connection
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
+import java.lang.Float.max
 
 class OverlayView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
     private var faceResult: FaceLandmarkerResult? = null
     private var handResult: HandLandmarkerResult? = null
-    private var previewWidth: Int = 0
-    private var previewHeight: Int = 0
-    private var scaleX: Float = 1f
-    private var scaleY: Float = 1f
 
-    // 画笔配置
+    private var imageWidth = 0
+    private var imageHeight = 0
+
+    private var isFrontCamera = true
+
+    // ---------- Paint ----------
     private val facePaint = Paint().apply {
         color = Color.WHITE
         strokeWidth = 2f
         style = Paint.Style.STROKE
     }
+
     private val rightEyePaint = Paint().apply {
         color = Color.RED
         strokeWidth = 3f
-        style = Paint.Style.STROKE
     }
+
     private val leftEyePaint = Paint().apply {
         color = Color.GREEN
         strokeWidth = 3f
-        style = Paint.Style.STROKE
     }
+
     private val handPaint = Paint().apply {
         color = Color.BLUE
         strokeWidth = 5f
-        style = Paint.Style.STROKE
     }
-    private val handLandmarkPaint = Paint().apply {
+
+    private val handPointPaint = Paint().apply {
         color = Color.YELLOW
-        strokeWidth = 8f
         style = Paint.Style.FILL
     }
 
-    // 更新检测结果
+    // =====================================================
+    // 更新检测结果（⭐ 只使用 MediaPipe 输入尺寸）
+    // =====================================================
     fun updateResults(
-        faceLandmarkerResult: FaceLandmarkerResult?,
-        handLandmarkerResult: HandLandmarkerResult?,
-        previewWidth: Int,
-        previewHeight: Int
+        face: FaceLandmarkerResult?,
+        hand: HandLandmarkerResult?,
+        inputWidth: Int,
+        inputHeight: Int
     ) {
-        this.faceResult = faceLandmarkerResult
-        this.handResult = handLandmarkerResult
-        this.previewWidth = previewWidth
-        this.previewHeight = previewHeight
-        invalidate() // 触发重绘
+        faceResult = face ?: faceResult
+        handResult = hand ?: handResult
+
+        imageWidth = inputWidth
+        imageHeight = inputHeight
+
+        invalidate()
     }
 
-    // ===================== 坐标转换函数（适配镜像/旋转） =====================
-    /**
-     * 归一化 X 坐标 → View 实际像素 X 坐标（适配前置摄像头镜像）
-     * @param x MediaPipe 返回的归一化 X 坐标（0~1）
-     */
-    private fun translateX(x: Float): Float {
-        // 前置摄像头镜像后，X 坐标需要反转（1 - x）再缩放
-        val mirroredX = 1 - x // 适配前置摄像头的水平镜像
-        return mirroredX * previewWidth * scaleX
+    fun setCameraParams(isFrontCamera: Boolean) {
+        this.isFrontCamera = isFrontCamera
     }
 
-    /**
-     * 归一化 Y 坐标 → View 实际像素 Y 坐标
-     * @param y MediaPipe 返回的归一化 Y 坐标（0~1）
-     */
-//    private fun translateY(y: Float): Float = y * previewHeight * scaleY
-    private fun translateY(y: Float): Float {
-        val mirroredY = 1 - y
-        return mirroredY * previewHeight * scaleY
-    }
+    // =====================================================
+    // 坐标转换
+    // =====================================================
+    private fun mapPoint(x: Float, y: Float): Pair<Float, Float> {
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        // 计算缩放比例：OverlayView 实际尺寸 / 预览图像尺寸
-        scaleX = width.toFloat() / previewWidth.toFloat()
-        scaleY = height.toFloat() / previewHeight.toFloat()
+        if (imageWidth == 0 || imageHeight == 0)
+            return 0f to 0f
 
-        // 绘制面部关键点（传入 List<Int> 类型常量）
-        faceResult?.faceLandmarks()?.forEach { faceLandmarks ->
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, rightEyePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, leftEyePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, facePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, facePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS, rightEyePaint)
-            drawConnectors(canvas, faceLandmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS, leftEyePaint)
+        // ===== CENTER_CROP 计算 =====
+        val scale = max(
+            width.toFloat() / imageWidth,
+            height.toFloat() / imageHeight
+        )
+
+        val scaledWidth = imageWidth * scale
+        val scaledHeight = imageHeight * scale
+
+        val offsetX = (scaledWidth - width) / 2f
+        val offsetY = (scaledHeight - height) / 2f
+
+        // MediaPipe → scaled image
+        var px = x * scaledWidth - offsetX
+        var py = y * scaledHeight - offsetY
+
+        // 竖屏上下颠倒; FIXME：只要旋转手机屏幕过快，就会出现面部绘制结果上下颠倒
+        py = height - py
+
+        // ⭐ 前置镜像
+        if (isFrontCamera) {
+            px = width - px
         }
 
-        // 绘制手部关键点（传入 Set<Connection> 类型常量）
-        handResult?.landmarks()?.forEach { handLandmarks ->
-            // 调用通用绘制函数，传入手部的 Set<Connection> 常量
-            drawConnectors(canvas, handLandmarks, HandLandmarker.HAND_CONNECTIONS, handPaint)
+        return px to py
+    }
 
-            // 绘制手部关键点
-            handLandmarks.forEach { landmark ->
+    // =====================================================
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+
+        // ---------- Face ----------
+        faceResult?.faceLandmarks()?.forEach { landmarks ->
+
+            drawFace(
+                canvas,
+                landmarks,
+                FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
+                facePaint
+            )
+
+            drawFace(
+                canvas,
+                landmarks,
+                FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
+                rightEyePaint
+            )
+
+            drawFace(
+                canvas,
+                landmarks,
+                FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
+                leftEyePaint
+            )
+
+            drawFace(
+                canvas,
+                landmarks,
+                FaceLandmarker.FACE_LANDMARKS_LIPS,
+                facePaint
+            )
+        }
+
+        // ---------- Hands ----------
+        handResult?.landmarks()?.forEach { hand ->
+
+            drawConnections(
+                canvas,
+                hand,
+                HandLandmarker.HAND_CONNECTIONS,
+                handPaint
+            )
+
+            hand.forEach {
+                val (px, py) = mapPoint(it.x(), it.y())
                 canvas.drawCircle(
-                    translateX(landmark.x()),
-                    translateY(landmark.y()),
+                    px,
+                    py,
                     8f,
-                    handLandmarkPaint
+                    handPointPaint
                 )
             }
         }
     }
 
-    // ===================== 通用绘制函数（兼容两种类型） =====================
-    /**
-     * 通用绘制连接点函数（适配面部 List<Int> 类型）
-     */
-    private fun drawConnectors(
-        canvas: Canvas,
-        landmarks: List<NormalizedLandmark>,
-        connections: List<Int>,
-        paint: Paint
-    ) {
-        for (i in 0 until connections.size step 2) {
-            if (i + 1 >= connections.size) break
-            val startIdx = connections[i]
-            val endIdx = connections[i + 1]
-            if (startIdx >= landmarks.size || endIdx >= landmarks.size) continue
-
-            val start = landmarks[startIdx]
-            val end = landmarks[endIdx]
-            drawLine(canvas, start, end, paint)
-        }
-    }
-
-    /**
-     * 通用绘制连接点函数（适配手部 Set<Connection> 类型）
-     */
-    private fun drawConnectors(
+    // =====================================================
+    private fun drawFace(
         canvas: Canvas,
         landmarks: List<NormalizedLandmark>,
         connections: Set<Connection>,
         paint: Paint
     ) {
-        connections.forEach { connection ->
-            val startIdx = connection.start()
-            val endIdx = connection.end()
-            if (startIdx >= landmarks.size || endIdx >= landmarks.size) return@forEach
-
-            val start = landmarks[startIdx]
-            val end = landmarks[endIdx]
-            drawLine(canvas, start, end, paint)
+        for (c in connections) {
+            val start = landmarks[c.start()]
+            val end = landmarks[c.end()]
+            val (x1,y1) = mapPoint(start.x(), start.y())
+            val (x2,y2) = mapPoint(end.x(), end.y())
+            canvas.drawLine(
+                x1,
+                y1,
+                x2,
+                y2,
+                paint
+            )
         }
     }
 
-    /**
-     * 公共画线逻辑
-     */
-    private fun drawLine(
+    private fun drawConnections(
         canvas: Canvas,
-        start: NormalizedLandmark,
-        end: NormalizedLandmark,
+        landmarks: List<NormalizedLandmark>,
+        connections: Set<Connection>,
         paint: Paint
     ) {
-        canvas.drawLine(
-            translateX(start.x()),
-            translateY(start.y()),
-            translateX(end.x()),
-            translateY(end.y()),
-            paint
-        )
+        for (c in connections) {
+            val s = landmarks[c.start()]
+            val e = landmarks[c.end()]
+
+            val (x1,y1) = mapPoint(s.x(), s.y())
+            val (x2,y2) = mapPoint(e.x(), e.y())
+            canvas.drawLine(
+                x1,
+                y1,
+                x2,
+                y2,
+                paint
+            )
+        }
     }
 }
