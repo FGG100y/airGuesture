@@ -7,16 +7,22 @@ import android.media.Image
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
+import android.view.Display
+import android.view.Surface
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
@@ -33,33 +39,37 @@ import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     // 手动声明控件（替代 View Binding）
-    private lateinit var viewFinder: PreviewView
+    private lateinit var previewView: PreviewView
     private lateinit var overlayView: OverlayView
 
+    private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
     private var cameraProvider: ProcessCameraProvider? = null
     private var faceLandmarker: FaceLandmarker? = null
     private var handLandmarker: HandLandmarker? = null
     private lateinit var cameraExecutor: ExecutorService
 
+    // 相机参数变量（用于传给OverlayView）
+    private var isFrontCamera = true // 默认前置
+
+    private var rotationDegrees = 0
+
     // 权限请求码
     private val REQUEST_CAMERA_PERMISSION = 1001
-    // 标记是否是前置摄像头（用于镜像处理）
-    private var isFrontCamera = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 加载布局 + 获取控件实例
         setContentView(R.layout.activity_main)
-        viewFinder = findViewById(R.id.viewFinder)
+        previewView = findViewById(R.id.viewFinder)
         overlayView = findViewById(R.id.overlayView)
 
         // 初始化线程池
         cameraExecutor = Executors.newSingleThreadExecutor()
+        cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         // 检查相机权限
         if (allPermissionsGranted()) {
-            startCamera()
             initMediaPipeModels()
+            setupCamera()
         } else {
             ActivityCompat.requestPermissions(
                 this,
@@ -69,20 +79,86 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 初始化MediaPipe模型（保持不变，仅修改检测时的图像类型）
+    /**
+     * 统一相机初始化逻辑（合并预览+图像分析，解决重复绑定问题）
+     */
+    private fun setupCamera() {
+        cameraProviderFuture.addListener({
+
+            val cameraProvider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder()
+                .build()
+                .also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(
+                    ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+                )
+                .build()
+                .also {
+                    it.setAnalyzer(cameraExecutor) { imageProxy ->
+                        processImage(imageProxy)
+                    }
+                }
+
+            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+            isFrontCamera = true
+
+            cameraProvider.unbindAll()
+
+            cameraProvider.bindToLifecycle(
+                this,
+                cameraSelector,
+                preview,
+                imageAnalysis
+            )
+
+            // 关键：不要传分辨率
+            overlayView.setCameraParams(
+                isFrontCamera = isFrontCamera
+            )
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+//    private fun getScreenRotationDegrees(): Int {
+//        return when (windowManager.defaultDisplay.rotation) {
+//            Surface.ROTATION_0 -> 0
+//            Surface.ROTATION_90 -> 90
+//            Surface.ROTATION_180 -> 180
+//            Surface.ROTATION_270 -> 270
+//            else -> 0
+//        }
+//    }
+//
+//    /**
+//     * 监听屏幕旋转，更新相机参数
+//     */
+//    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+//        super.onConfigurationChanged(newConfig)
+//        // 重新获取旋转角度并更新OverlayView
+//        rotationDegrees = getScreenRotationDegrees()
+//        isFrontCamera = false
+//        overlayView.setCameraParams(isFrontCamera)
+//    }
+
+    /**
+     * 初始化MediaPipe模型（逻辑不变）
+     */
     private fun initMediaPipeModels() {
         CoroutineScope(Dispatchers.IO).launch {
             // 初始化面部检测器
             val faceOptions = FaceLandmarkerOptions.builder()
                 .setBaseOptions(
                     BaseOptions.builder()
-                        .setModelAssetPath("face_landmarker.task") // 模型文件放在assets目录
+                        .setModelAssetPath("face_landmarker.task")
                         .build()
                 )
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumFaces(1)
                 .setResultListener { result, inputImage ->
-                    // 回调到主线程更新UI
                     runOnUiThread {
                         overlayView.updateResults(
                             result,
@@ -102,13 +178,12 @@ class MainActivity : AppCompatActivity() {
             val handOptions = HandLandmarkerOptions.builder()
                 .setBaseOptions(
                     BaseOptions.builder()
-                        .setModelAssetPath("hand_landmarker.task") // 模型文件放在assets目录
+                        .setModelAssetPath("hand_landmarker.task")
                         .build()
                 )
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumHands(2)
                 .setResultListener { result, inputImage ->
-                    // 回调到主线程更新UI
                     runOnUiThread {
                         overlayView.updateResults(
                             null,
@@ -126,47 +201,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 启动相机（保持不变，新增前置摄像头标记）
-    private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        cameraProviderFuture.addListener({
-            cameraProvider = cameraProviderFuture.get()
-
-            // 配置预览
-            val preview = Preview.Builder()
-                .build()
-                .also { it.setSurfaceProvider(viewFinder.surfaceProvider) }
-
-            // 配置图像分析（实时帧处理）
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also {
-                    it.setAnalyzer(cameraExecutor) { imageProxy: ImageProxy ->
-                        processImage(imageProxy)
-                    }
-                }
-
-            // 选择前置摄像头
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-            isFrontCamera = true // 标记为前置摄像头
-
-            try {
-                cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(
-                    this,
-                    cameraSelector,
-                    preview,
-                    imageAnalysis
-                )
-            } catch (e: Exception) {
-                Log.e("CameraX", "相机绑定失败: ${e.message}")
-            }
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    // 核心修复：使用 YuvToArgbConverter 处理 YUV 转 ARGB，解决缓冲区不足问题
+    /**
+     * 处理相机帧（逻辑不变，依赖YuvToArgbConverter工具类）
+     */
     private fun processImage(imageProxy: ImageProxy) {
         val frameTime = SystemClock.uptimeMillis()
         val mediaImage = imageProxy.image ?: run {
@@ -178,35 +215,39 @@ class MainActivity : AppCompatActivity() {
             // 1. YUV_420_888 转 ARGB_8888（前置摄像头同时做镜像）
             val argbBitmap = YuvToArgbConverter.convert(mediaImage, applyMirror = isFrontCamera)
 
-            // 2. 旋转位图适配相机预览方向
-            val rotatedBitmap = YuvToArgbConverter.rotateBitmap(
-                argbBitmap,
-                imageProxy.imageInfo.rotationDegrees
-            )
+            // 2. 根据旋转角度调整图像方向
+            rotationDegrees = imageProxy.imageInfo.rotationDegrees
+            val rotatedBitmap = when (rotationDegrees) {
+                90 -> YuvToArgbConverter.rotateBitmap(argbBitmap, 90)
+                180 -> YuvToArgbConverter.rotateBitmap(argbBitmap, 180)
+                270 -> YuvToArgbConverter.rotateBitmap(argbBitmap, 270)
+                else -> argbBitmap
+            }
 
-            // 3. 构建 MPImage（MediaPipe 官方推荐方式）
-            val mpImage: MPImage = BitmapImageBuilder(rotatedBitmap)
-                .build()
+            val mpImage: MPImage = BitmapImageBuilder(rotatedBitmap).build()
 
-            // 4. 提交帧到面部/手部检测器（异步）
+            // 5. 提交帧到检测器
             faceLandmarker?.detectAsync(mpImage, frameTime)
             handLandmarker?.detectAsync(mpImage, frameTime)
 
         } catch (e: Exception) {
             Log.e("ImageConversion", "图像转换失败: ${e.message}", e)
         } finally {
-            // 5. 必须关闭 ImageProxy 释放相机资源
             imageProxy.close()
         }
     }
 
-    // 检查权限（保持不变）
+    /**
+     * 检查权限（逻辑不变）
+     */
     private fun allPermissionsGranted() = ContextCompat.checkSelfPermission(
         this,
         android.Manifest.permission.CAMERA
     ) == PackageManager.PERMISSION_GRANTED
 
-    // 权限请求回调（保持不变）
+    /**
+     * 权限请求回调（逻辑不变）
+     */
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
@@ -215,8 +256,8 @@ class MainActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CAMERA_PERMISSION) {
             if (allPermissionsGranted()) {
-                startCamera()
                 initMediaPipeModels()
+                setupCamera()
             } else {
                 Toast.makeText(
                     this,
@@ -228,7 +269,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 释放资源（保持不变）
+    /**
+     * 释放资源（逻辑不变）
+     */
     override fun onDestroy() {
         super.onDestroy()
         cameraExecutor.shutdown()
