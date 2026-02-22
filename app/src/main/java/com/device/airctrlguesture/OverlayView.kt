@@ -14,6 +14,7 @@ import com.google.mediapipe.tasks.components.containers.Connection
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import java.lang.Float.max
 
+// FIXME：只要旋转手机屏幕过快，就会出现面部绘制结果上下颠倒
 class OverlayView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -101,7 +102,7 @@ class OverlayView @JvmOverloads constructor(
         var px = x * scaledWidth - offsetX
         var py = y * scaledHeight - offsetY
 
-        // 竖屏上下颠倒; FIXME：只要旋转手机屏幕过快，就会出现面部绘制结果上下颠倒
+        // 竖屏上下颠倒;
         py = height - py
 
         // ⭐ 前置镜像
