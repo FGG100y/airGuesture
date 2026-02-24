@@ -48,6 +48,15 @@ class MainActivity : AppCompatActivity() {
     private var handLandmarker: HandLandmarker? = null
     private lateinit var cameraExecutor: ExecutorService
 
+    private var cachedBitmap: Bitmap? = null
+    private var cachedRotatedBitmap: Bitmap? = null
+    private var cachedPixels: IntArray? = null
+    private var cachedMirrorPixels: IntArray? = null
+
+    private var lastImageWidth = 0
+    private var lastImageHeight = 0
+    private var lastRotationDegrees = 0
+
     // 相机参数变量（用于传给OverlayView）
     private var isFrontCamera = true // 默认前置
 
@@ -123,27 +132,6 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-//    private fun getScreenRotationDegrees(): Int {
-//        return when (windowManager.defaultDisplay.rotation) {
-//            Surface.ROTATION_0 -> 0
-//            Surface.ROTATION_90 -> 90
-//            Surface.ROTATION_180 -> 180
-//            Surface.ROTATION_270 -> 270
-//            else -> 0
-//        }
-//    }
-//
-//    /**
-//     * 监听屏幕旋转，更新相机参数
-//     */
-//    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-//        super.onConfigurationChanged(newConfig)
-//        // 重新获取旋转角度并更新OverlayView
-//        rotationDegrees = getScreenRotationDegrees()
-//        isFrontCamera = false
-//        overlayView.setCameraParams(isFrontCamera)
-//    }
-
     /**
      * 初始化MediaPipe模型（逻辑不变）
      */
@@ -212,21 +200,44 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
-            // 1. YUV_420_888 转 ARGB_8888（前置摄像头同时做镜像）
-            val argbBitmap = YuvToArgbConverter.convert(mediaImage, applyMirror = isFrontCamera)
+            val width = mediaImage.width
+            val height = mediaImage.height
+            val rotation = imageProxy.imageInfo.rotationDegrees
 
-            // 2. 根据旋转角度调整图像方向
-            rotationDegrees = imageProxy.imageInfo.rotationDegrees
-            val rotatedBitmap = when (rotationDegrees) {
-                90 -> YuvToArgbConverter.rotateBitmap(argbBitmap, 90)
-                180 -> YuvToArgbConverter.rotateBitmap(argbBitmap, 180)
-                270 -> YuvToArgbConverter.rotateBitmap(argbBitmap, 270)
+            if (width != lastImageWidth || height != lastImageHeight || rotation != lastRotationDegrees) {
+                Log.d("BitmapReuse", "尺寸变化，重新分配缓冲区: ${width}x${height} rotation=$rotation")
+                cachedBitmap?.recycle()
+                cachedRotatedBitmap?.recycle()
+                cachedBitmap = null
+                cachedRotatedBitmap = null
+                cachedPixels = IntArray(width * height)
+                cachedMirrorPixels = if (isFrontCamera) IntArray(width * height) else null
+                lastImageWidth = width
+                lastImageHeight = height
+                lastRotationDegrees = rotation
+            }
+
+            val argbBitmap = YuvToArgbConverter.convertWithReuse(
+                mediaImage,
+                applyMirror = isFrontCamera,
+                reuseBitmap = cachedBitmap,
+                reusePixels = cachedPixels,
+                reuseMirrorPixels = cachedMirrorPixels
+            )
+            cachedBitmap = argbBitmap
+
+            val rotatedBitmap = when (rotation) {
+                90 -> YuvToArgbConverter.rotateBitmapWithReuse(argbBitmap, 90, cachedRotatedBitmap)
+                180 -> YuvToArgbConverter.rotateBitmapWithReuse(argbBitmap, 180, cachedRotatedBitmap)
+                270 -> YuvToArgbConverter.rotateBitmapWithReuse(argbBitmap, 270, cachedRotatedBitmap)
                 else -> argbBitmap
+            }
+            if (rotation != 0 && rotatedBitmap !== argbBitmap) {
+                cachedRotatedBitmap = rotatedBitmap
             }
 
             val mpImage: MPImage = BitmapImageBuilder(rotatedBitmap).build()
 
-            // 5. 提交帧到检测器
             faceLandmarker?.detectAsync(mpImage, frameTime)
             handLandmarker?.detectAsync(mpImage, frameTime)
 
@@ -278,5 +289,7 @@ class MainActivity : AppCompatActivity() {
         faceLandmarker?.close()
         handLandmarker?.close()
         cameraProvider?.unbindAll()
+        cachedBitmap?.recycle()
+        cachedRotatedBitmap?.recycle()
     }
 }

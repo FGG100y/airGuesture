@@ -11,9 +11,24 @@ import java.nio.ByteBuffer
 object YuvToArgbConverter {
 
     /**
-     * 将 YUV_420_888 格式的 Image 转换为 ARGB_8888 格式的 Bitmap
+      * 将 YUV_420_888 格式的 Image 转换为 ARGB_8888 格式的 Bitmap（无缓存版本）
+      */
+    fun convert(image: Image, applyMirror: Boolean = false): Bitmap =
+        convertWithReuse(image, applyMirror, null, null, null)
+
+    /**
+     * 带缓存版本的转换方法，减少GC压力
+     * @param reuseBitmap 可复用的Bitmap（尺寸需匹配）
+     * @param reusePixels 可复用的像素数组（尺寸需匹配 width * height）
+     * @param reuseMirrorPixels 可复用的镜像像素数组（仅镜像时需要）
      */
-    fun convert(image: Image, applyMirror: Boolean = false): Bitmap {
+    fun convertWithReuse(
+        image: Image,
+        applyMirror: Boolean = false,
+        reuseBitmap: Bitmap?,
+        reusePixels: IntArray?,
+        reuseMirrorPixels: IntArray? = null
+    ): Bitmap {
         val width = image.width
         val height = image.height
 
@@ -31,9 +46,16 @@ object YuvToArgbConverter {
         val uvStride = uPlane.rowStride
         val uvPixelStride = uPlane.pixelStride
 
-        // 创建 ARGB 位图
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val argbPixels = IntArray(width * height)
+        val bitmap = if (reuseBitmap != null && reuseBitmap.width == width && reuseBitmap.height == height) {
+            reuseBitmap
+        } else {
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
+        val argbPixels = if (reusePixels != null && reusePixels.size == width * height) {
+            reusePixels
+        } else {
+            IntArray(width * height)
+        }
 
         // YUV_420_888 转 ARGB 核心算法
         var pixelIndex = 0
@@ -71,12 +93,14 @@ object YuvToArgbConverter {
             }
         }
 
-        // 应用前置摄像头镜像（可选）- 修复类型不匹配问题
         if (applyMirror) {
-            val mirroredPixels = IntArray(width * height)
+            val mirroredPixels = if (reuseMirrorPixels != null && reuseMirrorPixels.size == width * height) {
+                reuseMirrorPixels
+            } else {
+                IntArray(width * height)
+            }
             for (row in 0 until height) {
                 for (col in 0 until width) {
-                    // 显式转换为 Int，避免 Long 类型
                     val originalIndex = (row * width + col).toInt()
                     val mirroredIndex = (row * width + (width - 1 - col)).toInt()
                     mirroredPixels[mirroredIndex] = argbPixels[originalIndex]
@@ -91,10 +115,52 @@ object YuvToArgbConverter {
     }
 
     /**
-     * 处理 ImageProxy 旋转（适配相机预览方向）
+      * 处理 ImageProxy 旋转（适配相机预览方向）- 无缓存版本
+      */
+    fun rotateBitmap(bitmap: Bitmap, rotationDegrees: Int): Bitmap =
+        rotateBitmapWithReuse(bitmap, rotationDegrees, null)
+
+    /**
+     * 带缓存版本的旋转方法
+     * @param reuseBitmap 可复用的Bitmap（尺寸需匹配旋转后的尺寸）
+     * @return 旋转后的Bitmap（可能是reuseBitmap或新创建的）
      */
-    fun rotateBitmap(bitmap: Bitmap, rotationDegrees: Int): Bitmap {
+    fun rotateBitmapWithReuse(bitmap: Bitmap, rotationDegrees: Int, reuseBitmap: Bitmap?): Bitmap {
         if (rotationDegrees == 0) return bitmap
+
+        val newWidth: Int
+        val newHeight: Int
+        if (rotationDegrees == 90 || rotationDegrees == 270) {
+            newWidth = bitmap.height
+            newHeight = bitmap.width
+        } else {
+            newWidth = bitmap.width
+            newHeight = bitmap.height
+        }
+
+        if (reuseBitmap != null && reuseBitmap.width == newWidth && reuseBitmap.height == newHeight) {
+            val canvas = android.graphics.Canvas(reuseBitmap)
+            canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+
+            val matrix = android.graphics.Matrix()
+            when (rotationDegrees) {
+                90 -> {
+                    matrix.postRotate(90f)
+                    matrix.postTranslate(newWidth.toFloat(), 0f)
+                }
+                180 -> {
+                    matrix.postRotate(180f)
+                    matrix.postTranslate(newWidth.toFloat(), newHeight.toFloat())
+                }
+                270 -> {
+                    matrix.postRotate(270f)
+                    matrix.postTranslate(0f, newHeight.toFloat())
+                }
+            }
+            canvas.drawBitmap(bitmap, matrix, null)
+            return reuseBitmap
+        }
+
         val matrix = android.graphics.Matrix().apply {
             postRotate(rotationDegrees.toFloat())
         }
