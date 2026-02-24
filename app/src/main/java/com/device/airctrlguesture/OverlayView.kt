@@ -137,6 +137,7 @@ class OverlayView @JvmOverloads constructor(
         invalidate()
     }
 
+    // FIXME 张开手掌依然可以书写，左右移动会把字迹给删除
     private fun processDrawingAndGestures() {
         val hands = handResult?.landmarks() ?: return
         if (hands.isEmpty()) {
