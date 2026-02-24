@@ -170,13 +170,13 @@ class OverlayView @JvmOverloads constructor(
         return extendedFingers >= 4
     }
 
-    // fixme 自动删除字迹
     private fun processDrawingAndGestures() {
         val hands = handResult?.landmarks() ?: return
         if (hands.isEmpty()) {
             previousDrawPoint = null
             isDrawing = false
             isWaveGestureDetected = false
+            waveHistory.clear()
             return
         }
 
@@ -187,12 +187,17 @@ class OverlayView @JvmOverloads constructor(
         }
         isWaveGestureDetected = false
 
+        var handProcessed = false
+
         for (hand in hands) {
             if (hand.size < 21) continue
+
+            handProcessed = true
 
             if (isOpenPalm(hand)) {
                 previousDrawPoint = null
                 isDrawing = false
+                processWaveGesture(hand[8].x())
                 return
             }
 
@@ -214,14 +219,17 @@ class OverlayView @JvmOverloads constructor(
                 }
                 previousDrawPoint = currentPoint
                 isDrawing = true
-
-                processWaveGesture(currentPoint.first)
             } else {
                 previousDrawPoint = null
                 isDrawing = false
+                processWaveGesture(currentPoint.first)
             }
 
             break
+        }
+
+        if (!handProcessed || hands.isEmpty()) {
+            processWaveGesture(0f)
         }
     }
 
