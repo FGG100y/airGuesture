@@ -103,9 +103,17 @@ class OverlayView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w > 0 && h > 0) {
+            val oldBitmap = drawBitmap
             drawBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             drawCanvas = Canvas(drawBitmap!!)
-            clearCanvas()
+            
+            if (oldBitmap != null && !oldBitmap.isRecycled) {
+                val paint = Paint()
+                val srcRect = android.graphics.Rect(0, 0, oldBitmap.width, oldBitmap.height)
+                val dstRect = android.graphics.Rect(0, 0, w, h)
+                drawCanvas?.drawBitmap(oldBitmap, srcRect, dstRect, paint)
+                oldBitmap.recycle()
+            }
         }
     }
 
@@ -137,7 +145,32 @@ class OverlayView @JvmOverloads constructor(
         invalidate()
     }
 
-    // FIXME 张开手掌依然可以书写，左右移动会把字迹给删除
+    private fun isOpenPalm(hand: List<NormalizedLandmark>): Boolean {
+        if (hand.size < 21) return false
+
+        val thumbTip = hand[4]
+        val thumbIp = hand[3]
+        val indexTip = hand[8]
+        val indexPip = hand[6]
+        val middleTip = hand[12]
+        val middlePip = hand[10]
+        val ringTip = hand[16]
+        val ringPip = hand[14]
+        val pinkyTip = hand[20]
+        val pinkyPip = hand[18]
+
+        val thumbUp = thumbTip.y() < thumbIp.y()
+        val indexUp = indexTip.y() < indexPip.y()
+        val middleUp = middleTip.y() < middlePip.y()
+        val ringUp = ringTip.y() < ringPip.y()
+        val pinkyUp = pinkyTip.y() < pinkyPip.y()
+
+        val extendedFingers = listOf(indexUp, middleUp, ringUp, pinkyUp).count { it }
+        
+        return extendedFingers >= 4
+    }
+
+    // fixme 自动删除字迹
     private fun processDrawingAndGestures() {
         val hands = handResult?.landmarks() ?: return
         if (hands.isEmpty()) {
@@ -155,7 +188,13 @@ class OverlayView @JvmOverloads constructor(
         isWaveGestureDetected = false
 
         for (hand in hands) {
-            if (hand.size < 9) continue
+            if (hand.size < 21) continue
+
+            if (isOpenPalm(hand)) {
+                previousDrawPoint = null
+                isDrawing = false
+                return
+            }
 
             val indexTip = hand[8]
             val indexPip = hand[6]
