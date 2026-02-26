@@ -70,11 +70,15 @@ class MainActivity : AppCompatActivity() {
     // 权限请求码
     private val REQUEST_CAMERA_PERMISSION = 1001
 
+    // Debug mode flag
+    private var isDebugModeEnabled = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         previewView = findViewById(R.id.viewFinder)
         overlayView = findViewById(R.id.overlayView)
+        overlayView.setDebugMode(isDebugModeEnabled)
         faceTrackingSwitch = findViewById(R.id.faceTrackingSwitch)
 
         prefs = getSharedPreferences("airctrl_prefs", MODE_PRIVATE)
@@ -202,6 +206,42 @@ class MainActivity : AppCompatActivity() {
                             inputImage.width,
                             inputImage.height
                         )
+
+                        val timestamp = SystemClock.uptimeMillis()
+                        val handPresent = result.landmarks().isNotEmpty()
+
+                        Log.d("Gesture", "Frame: handPresent=$handPresent, landmarks=${result.landmarks().size}")
+
+                        if (handPresent) {
+                            val wrist = result.landmarks()[0][0]
+                            Log.d("Gesture", "Wrist: x=${wrist.x()}, y=${wrist.y()}")
+                            val gestureResult = GestureNative.updateGesture(
+                                1f - wrist.x(),
+                                wrist.y(),
+                                timestamp,
+                                true
+                            )
+                            Log.d("Gesture", "Gesture result: $gestureResult")
+                            when (gestureResult) {
+                                1 -> startCastRight()
+                                -1 -> startCastLeft()
+                            }
+                        } else {
+                            GestureNative.updateGesture(0f, 0f, timestamp, false)
+                        }
+
+                        if (isDebugModeEnabled) {
+                            val debugBuf = FloatArray(32)
+                            GestureNative.getDebugInfo(debugBuf)
+                            val dx = debugBuf[0]
+                            val vel = debugBuf[1]
+                            val count = debugBuf[3].toInt()
+                            val points = mutableListOf<Pair<Float, Float>>()
+                            for (i in 0 until count) {
+                                points.add(debugBuf[4 + i * 2] to debugBuf[4 + i * 2 + 1])
+                            }
+                            overlayView.updateDebugInfo(dx, vel, points)
+                        }
                     }
                 }
                 .setErrorListener { error ->
@@ -344,5 +384,13 @@ class MainActivity : AppCompatActivity() {
         cameraProvider?.unbindAll()
         cachedBitmap?.recycle()
         cachedRotatedBitmap?.recycle()
+    }
+
+    private fun startCastRight() {
+        Log.d("Gesture", "startCastRight() called - TODO: implement screen casting")
+    }
+
+    private fun startCastLeft() {
+        Log.d("Gesture", "startCastLeft() called - TODO: implement screen casting")
     }
 }

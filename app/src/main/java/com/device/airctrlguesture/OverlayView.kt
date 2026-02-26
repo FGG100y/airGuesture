@@ -30,6 +30,23 @@ class OverlayView @JvmOverloads constructor(
 
     private var isFrontCamera = true
 
+    // Debug mode
+    private var showDebugInfo = false
+    private var debugDx = 0f
+    private var debugVelocity = 0f
+    private var debugPoints: List<Pair<Float, Float>> = emptyList()
+
+    // Debug paints
+    private val debugLinePaint = Paint().apply {
+        color = Color.parseColor("#FFA500")
+        strokeWidth = 6f
+    }
+
+    private val debugTextPaint = Paint().apply {
+        color = Color.GREEN
+        textSize = 42f
+    }
+
     // ---------- Paint ----------
     private val facePaint = Paint().apply {
         color = Color.WHITE
@@ -84,6 +101,18 @@ class OverlayView @JvmOverloads constructor(
         if (!enabled) {
             faceResult = null
         }
+        invalidate()
+    }
+
+    fun setDebugMode(enabled: Boolean) {
+        showDebugInfo = enabled
+        invalidate()
+    }
+
+    fun updateDebugInfo(dx: Float, velocity: Float, points: List<Pair<Float, Float>>) {
+        debugDx = dx
+        debugVelocity = velocity
+        debugPoints = points
         invalidate()
     }
 
@@ -178,6 +207,41 @@ class OverlayView @JvmOverloads constructor(
                     handPointPaint
                 )
             }
+        }
+
+        // ---------- Debug Mode ----------
+        if (showDebugInfo && debugPoints.isNotEmpty()) {
+            for (i in 0 until debugPoints.size - 1) {
+                val (x1, y1) = mapPoint(debugPoints[i].first, debugPoints[i].second)
+                val (x2, y2) = mapPoint(debugPoints[i + 1].first, debugPoints[i + 1].second)
+                canvas.drawLine(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    debugLinePaint
+                )
+            }
+
+            val density = context.resources.displayMetrics.density
+            val marginTop = (48 * density).toFloat()
+            val marginEnd = (16 * density).toFloat()
+            val textX = width - marginEnd - debugTextPaint.measureText("dx=0.00")
+            val textY1 = marginTop + debugTextPaint.textSize
+            val textY2 = textY1 + debugTextPaint.textSize + (8 * density)
+
+            canvas.drawText(
+                "dx=%.2f".format(debugDx),
+                textX,
+                textY1,
+                debugTextPaint
+            )
+            canvas.drawText(
+                "vel=%.2f".format(debugVelocity),
+                textX,
+                textY2,
+                debugTextPaint
+            )
         }
     }
 
