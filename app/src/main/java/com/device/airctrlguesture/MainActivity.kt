@@ -1,6 +1,7 @@
 package com.device.airctrlguesture
 
 import android.content.pm.PackageManager
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.media.Image
@@ -41,12 +42,16 @@ class MainActivity : AppCompatActivity() {
     // 手动声明控件（替代 View Binding）
     private lateinit var previewView: PreviewView
     private lateinit var overlayView: OverlayView
+    private lateinit var faceTrackingSwitch: androidx.appcompat.widget.SwitchCompat
 
     private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
     private var cameraProvider: ProcessCameraProvider? = null
     private var faceLandmarker: FaceLandmarker? = null
     private var handLandmarker: HandLandmarker? = null
     private lateinit var cameraExecutor: ExecutorService
+
+    private lateinit var prefs: SharedPreferences
+    private var isFaceTrackingEnabled = true
 
     private var cachedBitmap: Bitmap? = null
     private var cachedRotatedBitmap: Bitmap? = null
@@ -70,6 +75,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         previewView = findViewById(R.id.viewFinder)
         overlayView = findViewById(R.id.overlayView)
+        faceTrackingSwitch = findViewById(R.id.faceTrackingSwitch)
+
+        prefs = getSharedPreferences("airctrl_prefs", MODE_PRIVATE)
+        isFaceTrackingEnabled = prefs.getBoolean("face_tracking_enabled", false)
 
         // 初始化线程池
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -79,12 +88,26 @@ class MainActivity : AppCompatActivity() {
         if (allPermissionsGranted()) {
             initMediaPipeModels()
             setupCamera()
+            overlayView.setFaceTrackingEnabled(isFaceTrackingEnabled)
         } else {
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(android.Manifest.permission.CAMERA),
                 REQUEST_CAMERA_PERMISSION
             )
+        }
+
+        faceTrackingSwitch.isChecked = isFaceTrackingEnabled
+
+        faceTrackingSwitch.setOnCheckedChangeListener { _, isChecked ->
+            isFaceTrackingEnabled = isChecked
+            prefs.edit().putBoolean("face_tracking_enabled", isChecked).apply()
+            overlayView.setFaceTrackingEnabled(isChecked)
+            if (!isChecked) {
+                overlayView.updateResults(null, null, 0, 0)
+            } else if (faceLandmarker == null) {
+                initFaceLandmarker()
+            }
         }
     }
 
@@ -137,32 +160,32 @@ class MainActivity : AppCompatActivity() {
      */
     private fun initMediaPipeModels() {
         CoroutineScope(Dispatchers.IO).launch {
-            // 初始化面部检测器
-            val faceOptions = FaceLandmarkerOptions.builder()
-                .setBaseOptions(
-                    BaseOptions.builder()
-                        .setModelAssetPath("face_landmarker.task")
-                        .build()
-                )
-                .setRunningMode(RunningMode.LIVE_STREAM)
-                .setNumFaces(1)
-                .setResultListener { result, inputImage ->
-                    runOnUiThread {
-                        overlayView.updateResults(
-                            result,
-                            null,
-                            inputImage.width,
-                            inputImage.height
-                        )
+            if (isFaceTrackingEnabled) {
+                val faceOptions = FaceLandmarkerOptions.builder()
+                    .setBaseOptions(
+                        BaseOptions.builder()
+                            .setModelAssetPath("face_landmarker.task")
+                            .build()
+                    )
+                    .setRunningMode(RunningMode.LIVE_STREAM)
+                    .setNumFaces(1)
+                    .setResultListener { result, inputImage ->
+                        runOnUiThread {
+                            overlayView.updateResults(
+                                result,
+                                null,
+                                inputImage.width,
+                                inputImage.height
+                            )
+                        }
                     }
-                }
-                .setErrorListener { error ->
-                    Log.e("FaceLandmarker", "检测错误: ${error.message}")
-                }
-                .build()
-            faceLandmarker = FaceLandmarker.createFromOptions(this@MainActivity, faceOptions)
+                    .setErrorListener { error ->
+                        Log.e("FaceLandmarker", "检测错误: ${error.message}")
+                    }
+                    .build()
+                faceLandmarker = FaceLandmarker.createFromOptions(this@MainActivity, faceOptions)
+            }
 
-            // 初始化手部检测器
             val handOptions = HandLandmarkerOptions.builder()
                 .setBaseOptions(
                     BaseOptions.builder()
@@ -186,6 +209,34 @@ class MainActivity : AppCompatActivity() {
                 }
                 .build()
             handLandmarker = HandLandmarker.createFromOptions(this@MainActivity, handOptions)
+        }
+    }
+
+    private fun initFaceLandmarker() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val faceOptions = FaceLandmarkerOptions.builder()
+                .setBaseOptions(
+                    BaseOptions.builder()
+                        .setModelAssetPath("face_landmarker.task")
+                        .build()
+                )
+                .setRunningMode(RunningMode.LIVE_STREAM)
+                .setNumFaces(1)
+                .setResultListener { result, inputImage ->
+                    runOnUiThread {
+                        overlayView.updateResults(
+                            result,
+                            null,
+                            inputImage.width,
+                            inputImage.height
+                        )
+                    }
+                }
+                .setErrorListener { error ->
+                    Log.e("FaceLandmarker", "检测错误: ${error.message}")
+                }
+                .build()
+            faceLandmarker = FaceLandmarker.createFromOptions(this@MainActivity, faceOptions)
         }
     }
 
@@ -238,7 +289,9 @@ class MainActivity : AppCompatActivity() {
 
             val mpImage: MPImage = BitmapImageBuilder(rotatedBitmap).build()
 
-            faceLandmarker?.detectAsync(mpImage, frameTime)
+            if (isFaceTrackingEnabled) {
+                faceLandmarker?.detectAsync(mpImage, frameTime)
+            }
             handLandmarker?.detectAsync(mpImage, frameTime)
 
         } catch (e: Exception) {

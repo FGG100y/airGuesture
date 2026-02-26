@@ -23,6 +23,7 @@ class OverlayView @JvmOverloads constructor(
 
     private var faceResult: FaceLandmarkerResult? = null
     private var handResult: HandLandmarkerResult? = null
+    private var isFaceTrackingEnabled = true
 
     private var imageWidth = 0
     private var imageHeight = 0
@@ -78,6 +79,14 @@ class OverlayView @JvmOverloads constructor(
         this.isFrontCamera = isFrontCamera
     }
 
+    fun setFaceTrackingEnabled(enabled: Boolean) {
+        this.isFaceTrackingEnabled = enabled
+        if (!enabled) {
+            faceResult = null
+        }
+        invalidate()
+    }
+
     // =====================================================
     // 坐标转换
     // =====================================================
@@ -117,36 +126,37 @@ class OverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // ---------- Face ----------
-        faceResult?.faceLandmarks()?.forEach { landmarks ->
+        if (isFaceTrackingEnabled) {
+            faceResult?.faceLandmarks()?.forEach { landmarks ->
 
-            drawFace(
-                canvas,
-                landmarks,
-                FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
-                facePaint
-            )
+                drawFace(
+                    canvas,
+                    landmarks,
+                    FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
+                    facePaint
+                )
 
-            drawFace(
-                canvas,
-                landmarks,
-                FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
-                rightEyePaint
-            )
+                drawFace(
+                    canvas,
+                    landmarks,
+                    FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
+                    rightEyePaint
+                )
 
-            drawFace(
-                canvas,
-                landmarks,
-                FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
-                leftEyePaint
-            )
+                drawFace(
+                    canvas,
+                    landmarks,
+                    FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
+                    leftEyePaint
+                )
 
-            drawFace(
-                canvas,
-                landmarks,
-                FaceLandmarker.FACE_LANDMARKS_LIPS,
-                facePaint
-            )
+                drawFace(
+                    canvas,
+                    landmarks,
+                    FaceLandmarker.FACE_LANDMARKS_LIPS,
+                    facePaint
+                )
+            }
         }
 
         // ---------- Hands ----------
