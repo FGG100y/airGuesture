@@ -213,11 +213,11 @@ class MainActivity : AppCompatActivity() {
                         Log.d("Gesture", "Frame: handPresent=$handPresent, landmarks=${result.landmarks().size}")
 
                         if (handPresent) {
-                            val wrist = result.landmarks()[0][0]
-                            Log.d("Gesture", "Wrist: x=${wrist.x()}, y=${wrist.y()}")
+                            val indexMcp = result.landmarks()[0][5]
+                            Log.d("Gesture", "IndexMCP: x=${indexMcp.x()}, y=${indexMcp.y()}")
                             val gestureResult = GestureNative.updateGesture(
-                                1f - wrist.x(),
-                                wrist.y(),
+                                1f - indexMcp.x(),
+                                indexMcp.y(),
                                 timestamp,
                                 true
                             )

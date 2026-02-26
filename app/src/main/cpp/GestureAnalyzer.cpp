@@ -153,6 +153,8 @@ GestureAnalyzer::update(float x,float y,
             if(detectPrepare()){
                 LOGD("state: IDLE→PREPARE");
                 state_=State::PREPARE;
+            } else {
+                LOGD("state: IDLE stays IDLE (detectPrepare=false)");
             }
             break;
 
@@ -163,6 +165,8 @@ GestureAnalyzer::update(float x,float y,
                 res.direction=*dir;
                 LOGD("state: PREPARE→CONFIRM_WAIT dir=%s", *dir == Direction::RIGHT ? "RIGHT" : "LEFT");
                 state_=State::CONFIRM_WAIT;
+            } else {
+                LOGD("state: PREPARE stays PREPARE (no swing detected)");
             }
             break;
         }
