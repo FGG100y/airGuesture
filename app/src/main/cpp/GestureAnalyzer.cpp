@@ -9,7 +9,8 @@ GestureAnalyzer::GestureAnalyzer()
         : state_(State::IDLE),
           has_prev_(false),
           cooldown_until_(0),
-          swing_time_(0) {}
+          swing_time_(0),
+          detected_direction_(Direction::NONE) {}
 
 void GestureAnalyzer::smooth(float& x,float& y)
 {
@@ -142,7 +143,7 @@ GestureAnalyzer::detectSwing()
 
     if(!dir_ok) return std::nullopt;
 
-    Direction dir = dx > 0 ? Direction::LEFT : Direction::RIGHT;
+    Direction dir = dx > 0 ? Direction::RIGHT : Direction::LEFT;
     LOGD("detectSwing: → %s", dir == Direction::RIGHT ? "RIGHT" : "LEFT");
     return dir;
 }
@@ -216,8 +217,9 @@ GestureAnalyzer::update(float x,float y,
             auto dir=detectSwing();
             if(dir){
                 swing_time_=ts;
-                res.direction=*dir;
-                LOGD("state: PREPARE→CONFIRM_WAIT dir=%s", *dir == Direction::RIGHT ? "RIGHT" : "LEFT");
+                detected_direction_ = *dir;
+                res.direction = *dir;
+                LOGD("state: PREPARE→CONFIRM_WAIT dir=%d (%s)", (int)*dir, *dir == Direction::RIGHT ? "RIGHT" : "LEFT");
                 state_=State::CONFIRM_WAIT;
             } else {
                 LOGD("state: PREPARE stays PREPARE (no swing detected)");
@@ -226,17 +228,20 @@ GestureAnalyzer::update(float x,float y,
         }
 
         case State::CONFIRM_WAIT:
+            LOGD("CONFIRM_WAIT: detected_direction_=%d before check", (int)detected_direction_);
+            res.direction = detected_direction_;
             if(detectConfirm(ts)){
                 res.triggered=true;
                 state_=State::COOLDOWN;
                 cooldown_until_=ts+COOLDOWN_MS;
                 traj_.clear();
-                LOGD("*** TRIGGERED: %s ***", res.direction == Direction::RIGHT ? "RIGHT" : "LEFT");
+                LOGD("*** TRIGGERED: %d (%s) ***", (int)res.direction, res.direction == Direction::RIGHT ? "RIGHT" : "LEFT");
             }
             break;
 
         default: break;
     }
 
+    LOGD("update: returning triggered=%d direction=%d", res.triggered ? 1 : 0, (int)res.direction);
     return res;
 }

@@ -68,6 +68,7 @@ private:
 
     int64_t cooldown_until_;
     int64_t swing_time_;
+    Direction detected_direction_;
 
     DebugInfo debug_;
 
@@ -78,12 +79,12 @@ private:
     static constexpr float PREPARE_SPEED_MAX=0.5f;
     static constexpr float SWING_VEL_MIN=0.35f;
     static constexpr float DISPLACEMENT_MIN=0.06f;
-    static constexpr float CONFIRM_SPEED_MAX=0.5f;
+    static constexpr float CONFIRM_SPEED_MAX=0.7f;
 
     static constexpr int MIN_SWIPE_DURATION_MS=100;
     static constexpr int MAX_SWIPE_DURATION_MS=500;
     static constexpr float DIRECTION_CONSISTENCY_MIN=0.65f;
 
-    static constexpr int CONFIRM_DELAY_MS=150;
+    static constexpr int CONFIRM_DELAY_MS=50;
     static constexpr int COOLDOWN_MS=800;
 };
