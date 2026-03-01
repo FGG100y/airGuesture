@@ -216,7 +216,7 @@ class MainActivity : AppCompatActivity() {
                             val indexMcp = result.landmarks()[0][5]
                             Log.d("Gesture", "IndexMCP: x=${indexMcp.x()}, y=${indexMcp.y()}")
                             val gestureResult = GestureNative.updateGesture(
-                                1f - indexMcp.x(),
+                                indexMcp.x(),
                                 indexMcp.y(),
                                 timestamp,
                                 true

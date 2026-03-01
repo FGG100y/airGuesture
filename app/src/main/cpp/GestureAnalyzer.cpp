@@ -44,6 +44,37 @@ void GestureAnalyzer::pushSample(float x,float y,int64_t t)
     debug_.point_count=i;
 }
 
+int64_t GestureAnalyzer::getGestureDuration() const
+{
+    if(traj_.empty()) return 0;
+    return traj_.back().t - traj_.front().t;
+}
+
+float GestureAnalyzer::checkDirectionConsistency() const
+{
+    if(traj_.size() < 3) return 0.0f;
+
+    int left_count = 0;
+    int right_count = 0;
+    float prev_x = traj_.front().x;
+
+    for(auto& p : traj_) {
+        float dx = p.x - prev_x;
+        if(dx < -0.005f) {
+            left_count++;
+        } else if(dx > 0.005f) {
+            right_count++;
+        }
+        prev_x = p.x;
+    }
+
+    int total = left_count + right_count;
+    if(total == 0) return 0.0f;
+
+    int dominant = (left_count > right_count) ? left_count : right_count;
+    return (float)dominant / (float)total;
+}
+
 bool GestureAnalyzer::detectPrepare()
 {
     if(traj_.size()<5) return false;
@@ -54,6 +85,8 @@ bool GestureAnalyzer::detectPrepare()
     float dx=l.x-f.x;
     float dy=l.y-f.y;
     float dt=(l.t-f.t)/1000.f;
+
+    if(dt <= 0) return false;
 
     float speed=sqrt(dx*dx+dy*dy)/dt;
     bool result = speed < PREPARE_SPEED_MAX;
@@ -69,12 +102,24 @@ GestureAnalyzer::detectSwing()
         return std::nullopt;
     }
 
+    int64_t duration = getGestureDuration();
+    if(duration < MIN_SWIPE_DURATION_MS) {
+        LOGD("detectSwing: duration=%ldms < %dms → too fast", (long)duration, MIN_SWIPE_DURATION_MS);
+        return std::nullopt;
+    }
+    if(duration > MAX_SWIPE_DURATION_MS) {
+        LOGD("detectSwing: duration=%ldms > %dms → too slow", (long)duration, MAX_SWIPE_DURATION_MS);
+        return std::nullopt;
+    }
+
     auto&f=traj_.front();
     auto&l=traj_.back();
 
     float dx=l.x-f.x;
     float dy=l.y-f.y;
     float dt=(l.t-f.t)/1000.f;
+
+    if(dt <= 0) return std::nullopt;
 
     float vel=sqrt(dx*dx+dy*dy)/dt;
 
@@ -83,14 +128,21 @@ GestureAnalyzer::detectSwing()
 
     bool disp_ok = fabs(dx) >= DISPLACEMENT_MIN;
     bool vel_ok = vel >= SWING_VEL_MIN;
-    LOGD("detectSwing: dx=%.2f disp_min=%.2f %s vel=%.2f vel_min=%.2f %s",
+    LOGD("detectSwing: dx=%.3f disp_min=%.3f %s vel=%.3f vel_min=%.3f %s",
          dx, (float)DISPLACEMENT_MIN, disp_ok ? "✓" : "✗",
          vel, (float)SWING_VEL_MIN, vel_ok ? "✓" : "✗");
 
     if(!disp_ok) return std::nullopt;
     if(!vel_ok) return std::nullopt;
 
-    Direction dir = dx > 0 ? Direction::RIGHT : Direction::LEFT;
+    float consistency = checkDirectionConsistency();
+    bool dir_ok = consistency >= DIRECTION_CONSISTENCY_MIN;
+    LOGD("detectSwing: consistency=%.2f min=%.2f %s",
+         consistency, (float)DIRECTION_CONSISTENCY_MIN, dir_ok ? "✓" : "✗");
+
+    if(!dir_ok) return std::nullopt;
+
+    Direction dir = dx > 0 ? Direction::LEFT : Direction::RIGHT;
     LOGD("detectSwing: → %s", dir == Direction::RIGHT ? "RIGHT" : "LEFT");
     return dir;
 }
@@ -109,6 +161,8 @@ bool GestureAnalyzer::detectConfirm(int64_t now)
     float dx=l.x-f.x;
     float dy=l.y-f.y;
     float dt=(l.t-f.t)/1000.f;
+
+    if(dt <= 0) return false;
 
     float speed=sqrt(dx*dx+dy*dy)/dt;
 

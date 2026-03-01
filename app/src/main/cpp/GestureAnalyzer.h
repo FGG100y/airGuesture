@@ -55,6 +55,8 @@ private:
     bool detectPrepare();
     std::optional<Direction> detectSwing();
     bool detectConfirm(int64_t now);
+    float checkDirectionConsistency() const;
+    int64_t getGestureDuration() const;
 
 private:
     std::deque<Sample> traj_;
@@ -70,14 +72,18 @@ private:
     DebugInfo debug_;
 
 private:
-    static constexpr float SMOOTH_ALPHA=0.6f;
-    static constexpr int WINDOW_MS=300;
+    static constexpr float SMOOTH_ALPHA=0.7f;
+    static constexpr int WINDOW_MS=400;
 
     static constexpr float PREPARE_SPEED_MAX=0.5f;
-    static constexpr float SWING_VEL_MIN=0.4f;
-    static constexpr float DISPLACEMENT_MIN=0.08f;
-    static constexpr float CONFIRM_SPEED_MAX=0.6f;
+    static constexpr float SWING_VEL_MIN=0.35f;
+    static constexpr float DISPLACEMENT_MIN=0.06f;
+    static constexpr float CONFIRM_SPEED_MAX=0.5f;
 
-    static constexpr int CONFIRM_DELAY_MS=100;
-    static constexpr int COOLDOWN_MS=500;
+    static constexpr int MIN_SWIPE_DURATION_MS=100;
+    static constexpr int MAX_SWIPE_DURATION_MS=500;
+    static constexpr float DIRECTION_CONSISTENCY_MIN=0.65f;
+
+    static constexpr int CONFIRM_DELAY_MS=150;
+    static constexpr int COOLDOWN_MS=800;
 };
