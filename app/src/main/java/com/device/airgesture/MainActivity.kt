@@ -1,7 +1,10 @@
 package com.device.airgesture
 
+import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.SharedPreferences
+import android.provider.Settings
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.SystemClock
@@ -25,6 +28,9 @@ import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker.FaceLandm
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker.HandLandmarkerOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
+import com.device.airgesture.action.Gesture
+import com.device.airgesture.action.GestureActionManager
+import com.device.airgesture.utils.LogUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -92,6 +98,11 @@ class MainActivity : AppCompatActivity() {
                 arrayOf(android.Manifest.permission.CAMERA),
                 REQUEST_CAMERA_PERMISSION
             )
+        }
+
+        // 检查无障碍服务权限
+        if (!isAccessibilityServiceEnabled()) {
+            showAccessibilityPermissionDialog()
         }
 
         faceTrackingSwitch.isChecked = isFaceTrackingEnabled
@@ -177,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     .setErrorListener { error ->
-                        Log.e("FaceLandmarker", "检测错误: ${error.message}")
+                        LogUtil.e("FaceLandmarker", "检测错误: ${error.message}")
                     }
                     .build()
                 faceLandmarker = FaceLandmarker.createFromOptions(this@MainActivity, faceOptions)
@@ -203,21 +214,21 @@ class MainActivity : AppCompatActivity() {
                         val timestamp = SystemClock.uptimeMillis()
                         val handPresent = result.landmarks().isNotEmpty()
 
-                        Log.d("Gesture", "Frame: handPresent=$handPresent, landmarks=${result.landmarks().size}")
+                        LogUtil.d("Gesture", "Frame: handPresent=$handPresent, landmarks=${result.landmarks().size}")
 
                         if (handPresent) {
                             val indexMcp = result.landmarks()[0][5]
-                            Log.d("Gesture", "IndexMCP: x=${indexMcp.x()}, y=${indexMcp.y()}")
+                            LogUtil.d("Gesture", "IndexMCP: x=${indexMcp.x()}, y=${indexMcp.y()}")
                             val gestureResult = GestureNative.updateGesture(
                                 indexMcp.x(),
                                 indexMcp.y(),
                                 timestamp,
                                 true
                             )
-                            Log.d("Gesture", "Gesture result: $gestureResult")
+                            LogUtil.d("Gesture", "Gesture result: $gestureResult")
                             when (gestureResult) {
-                                1 -> slidePrevPage() // swipe right: next page
-                                -1 -> slideNextPage() // swipe left: next page
+                                1 -> GestureActionManager.getInstance().onGestureDetected(Gesture.SWIPE_RIGHT)
+                                -1 -> GestureActionManager.getInstance().onGestureDetected(Gesture.SWIPE_LEFT)
                             }
                         } else {
                             GestureNative.updateGesture(0f, 0f, timestamp, false)
@@ -238,7 +249,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 .setErrorListener { error ->
-                    Log.e("HandLandmarker", "检测错误: ${error.message}")
+                    LogUtil.e("HandLandmarker", "检测错误: ${error.message}")
                 }
                 .build()
             handLandmarker = HandLandmarker.createFromOptions(this@MainActivity, handOptions)
@@ -266,7 +277,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 .setErrorListener { error ->
-                    Log.e("FaceLandmarker", "检测错误: ${error.message}")
+                    LogUtil.e("FaceLandmarker", "检测错误: ${error.message}")
                 }
                 .build()
             faceLandmarker = FaceLandmarker.createFromOptions(this@MainActivity, faceOptions)
@@ -274,7 +285,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 处理相机帧（逻辑不变，依赖YuvToArgbConverter工具类）
+     * 释放资源（逻辑不变）
      */
     private fun processImage(imageProxy: ImageProxy) {
         val frameTime = SystemClock.uptimeMillis()
@@ -289,7 +300,7 @@ class MainActivity : AppCompatActivity() {
             val rotation = imageProxy.imageInfo.rotationDegrees
 
             if (width != lastImageWidth || height != lastImageHeight || rotation != lastRotationDegrees) {
-                Log.d("BitmapReuse", "尺寸变化，重新分配缓冲区: ${width}x${height} rotation=$rotation")
+                LogUtil.d("BitmapReuse", "尺寸变化，重新分配缓冲区: ${width}x${height} rotation=$rotation")
                 cachedBitmap?.recycle()
                 cachedRotatedBitmap?.recycle()
                 cachedBitmap = null
@@ -328,7 +339,7 @@ class MainActivity : AppCompatActivity() {
             handLandmarker?.detectAsync(mpImage, frameTime)
 
         } catch (e: Exception) {
-            Log.e("ImageConversion", "图像转换失败: ${e.message}", e)
+            LogUtil.e("ImageConversion", "图像转换失败: ${e.message}", e)
         } finally {
             imageProxy.close()
         }
@@ -379,11 +390,38 @@ class MainActivity : AppCompatActivity() {
         cachedRotatedBitmap?.recycle()
     }
 
-    private fun slidePrevPage() {
-        Log.d("Gesture", "slidePrevPage() called - TODO: implement screen prev page")
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val serviceName = ComponentName(this, com.device.airgesture.service.AirGestureAccessibilityService::class.java)
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+
+        return enabledServices.contains(serviceName.flattenToString())
     }
 
-    private fun slideNextPage() {
-        Log.d("Gesture", "slideNextPage() called - TODO: implement screen next page")
+    private fun showAccessibilityPermissionDialog() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("需要无障碍权限")
+            .setMessage("手势翻页功能需要开启无障碍服务。\n\n请在设置中开启「AirGesture」服务。")
+            .setPositiveButton("去设置") { _, _ ->
+                openAccessibilitySettings()
+            }
+            .setNegativeButton("暂不开启", null)
+            .setCancelable(false)
+            .show()
     }
+
+    private fun openAccessibilitySettings() {
+        try {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(intent)
+            LogUtil.i("MainActivity", "已跳转到无障碍服务设置页面")
+        } catch (e: Exception) {
+            LogUtil.e("MainActivity", "无法打开无障碍设置页面", e)
+            Toast.makeText(this, "无法打开设置页面，请手动开启无障碍服务", Toast.LENGTH_LONG).show()
+        }
+    }
+
 }
