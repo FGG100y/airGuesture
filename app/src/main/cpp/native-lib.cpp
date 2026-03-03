@@ -5,7 +5,7 @@ static GestureAnalyzer analyzer;
 
 extern "C"
 JNIEXPORT jint JNICALL
-Java_com_device_airctrlguesture_GestureNative_updateGesture(
+Java_com_device_airgesture_GestureNative_updateGesture(
         JNIEnv*, jobject,
         jfloat x,jfloat y,
         jlong ts,
@@ -19,7 +19,7 @@ Java_com_device_airctrlguesture_GestureNative_updateGesture(
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_device_airctrlguesture_GestureNative_getDebugInfo(
+Java_com_device_airgesture_GestureNative_getDebugInfo(
         JNIEnv* env,jobject,
 jfloatArray arr)
 {

@@ -17,7 +17,7 @@
         app:layout_constraintTop_toTopOf="parent" />
 
     <!-- 关键点绘制Overlay -->
-    <com.device.airctrlguesture.OverlayView
+    <com.device.airgesture.OverlayView
         android:id="@+id/overlayView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

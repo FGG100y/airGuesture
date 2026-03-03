@@ -1,4 +1,4 @@
-package com.device.airctrlguesture.ui.theme
+package com.device.airgesture.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

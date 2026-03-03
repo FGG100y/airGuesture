@@ -1,4 +1,4 @@
-package com.device.airctrlguesture
+package com.device.airgesture
 
 import android.content.Context
 import android.graphics.Canvas

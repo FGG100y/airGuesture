@@ -1,8 +1,7 @@
-package com.device.airctrlguesture
+package com.device.airgesture
 
 import android.graphics.Bitmap
 import android.media.Image
-import java.nio.ByteBuffer
 
 /**
  * 通用的 YUV_420_888 转 ARGB_8888 Bitmap 工具类

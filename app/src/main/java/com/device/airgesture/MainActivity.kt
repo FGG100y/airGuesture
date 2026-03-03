@@ -1,24 +1,17 @@
-package com.device.airctrlguesture
+package com.device.airgesture
 
 import android.content.pm.PackageManager
 import android.content.SharedPreferences
 import android.graphics.Bitmap
-import android.graphics.Matrix
-import android.media.Image
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
-import android.view.Display
-import android.view.Surface
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
-import androidx.camera.core.UseCase
-import androidx.camera.core.resolutionselector.AspectRatioStrategy
-import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
