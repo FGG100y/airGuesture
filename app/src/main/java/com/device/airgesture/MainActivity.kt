@@ -216,8 +216,8 @@ class MainActivity : AppCompatActivity() {
                             )
                             Log.d("Gesture", "Gesture result: $gestureResult")
                             when (gestureResult) {
-                                1 -> startCastRight()
-                                -1 -> startCastLeft()
+                                1 -> slidePrevPage() // swipe right: next page
+                                -1 -> slideNextPage() // swipe left: next page
                             }
                         } else {
                             GestureNative.updateGesture(0f, 0f, timestamp, false)
@@ -379,11 +379,11 @@ class MainActivity : AppCompatActivity() {
         cachedRotatedBitmap?.recycle()
     }
 
-    private fun startCastRight() {
-        Log.d("Gesture", "startCastRight() called - TODO: implement screen casting")
+    private fun slidePrevPage() {
+        Log.d("Gesture", "slidePrevPage() called - TODO: implement screen prev page")
     }
 
-    private fun startCastLeft() {
-        Log.d("Gesture", "startCastLeft() called - TODO: implement screen casting")
+    private fun slideNextPage() {
+        Log.d("Gesture", "slideNextPage() called - TODO: implement screen next page")
     }
 }
