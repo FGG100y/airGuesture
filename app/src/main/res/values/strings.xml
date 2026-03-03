@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">airGesture</string>
+    <string name="accessibility_service_description">手势控制服务，用于通过手势控制其他应用的翻页等功能</string>
 </resources>

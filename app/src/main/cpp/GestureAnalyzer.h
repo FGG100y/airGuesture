@@ -9,7 +9,9 @@ public:
     enum class Direction {
         NONE = 0,
         LEFT = -1,
-        RIGHT = 1
+        RIGHT = 1,
+        UP = 2,
+        DOWN = -2
     };
 
     struct Result {

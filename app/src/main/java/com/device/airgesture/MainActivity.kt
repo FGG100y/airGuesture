@@ -1,389 +1,254 @@
 package com.device.airgesture
 
+import android.Manifest
+import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.SharedPreferences
-import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
-import android.util.Log
+import android.provider.Settings
+import android.view.View
+import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.mediapipe.framework.image.BitmapImageBuilder
-import com.google.mediapipe.framework.image.MPImage
-import com.google.mediapipe.tasks.core.BaseOptions
-import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
-import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker.FaceLandmarkerOptions
-import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
-import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker.HandLandmarkerOptions
-import com.google.mediapipe.tasks.vision.core.RunningMode
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import com.device.airgesture.service.GestureRecognitionService
+import com.device.airgesture.utils.LogUtil
 
 class MainActivity : AppCompatActivity() {
-    // 手动声明控件（替代 View Binding）
-    private lateinit var previewView: PreviewView
-    private lateinit var overlayView: OverlayView
-    private lateinit var faceTrackingSwitch: androidx.appcompat.widget.SwitchCompat
 
-    private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
-    private var cameraProvider: ProcessCameraProvider? = null
-    private var faceLandmarker: FaceLandmarker? = null
-    private var handLandmarker: HandLandmarker? = null
-    private lateinit var cameraExecutor: ExecutorService
+    private lateinit var cameraStatus: TextView
+    private lateinit var overlayStatus: TextView
+    private lateinit var accessibilityStatus: TextView
+    private lateinit var startServiceButton: View
+    private lateinit var configButton: View
+    private lateinit var hintText: TextView
 
-    private lateinit var prefs: SharedPreferences
-    private var isFaceTrackingEnabled = true
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        refreshPermissionStatus()
+        checkAndStartService()
+    }
 
-    private var cachedBitmap: Bitmap? = null
-    private var cachedRotatedBitmap: Bitmap? = null
-    private var cachedPixels: IntArray? = null
-    private var cachedMirrorPixels: IntArray? = null
-
-    private var lastImageWidth = 0
-    private var lastImageHeight = 0
-    private var lastRotationDegrees = 0
-
-    // 相机参数变量（用于传给OverlayView）
-    private var isFrontCamera = true // 默认前置
-
-    private var rotationDegrees = 0
-
-    // 权限请求码
-    private val REQUEST_CAMERA_PERMISSION = 1001
-
-    // Debug mode flag
-    private var isDebugModeEnabled = true
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        refreshPermissionStatus()
+        checkAndStartService()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        previewView = findViewById(R.id.viewFinder)
-        overlayView = findViewById(R.id.overlayView)
-        overlayView.setDebugMode(isDebugModeEnabled)
-        faceTrackingSwitch = findViewById(R.id.faceTrackingSwitch)
 
-        prefs = getSharedPreferences("airctrl_prefs", MODE_PRIVATE)
-        isFaceTrackingEnabled = prefs.getBoolean("face_tracking_enabled", false)
+        initViews()
+        setupClickListeners()
+    }
 
-        // 初始化线程池
-        cameraExecutor = Executors.newSingleThreadExecutor()
-        cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+    override fun onResume() {
+        super.onResume()
+        refreshPermissionStatus()
+        checkAndStartService()
+    }
 
-        // 检查相机权限
-        if (allPermissionsGranted()) {
-            initMediaPipeModels()
-            setupCamera()
-            overlayView.setFaceTrackingEnabled(isFaceTrackingEnabled)
-        } else {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(android.Manifest.permission.CAMERA),
-                REQUEST_CAMERA_PERMISSION
-            )
+    private fun initViews() {
+        cameraStatus = findViewById(R.id.cameraStatus)
+        overlayStatus = findViewById(R.id.overlayStatus)
+        accessibilityStatus = findViewById(R.id.accessibilityStatus)
+        startServiceButton = findViewById(R.id.startServiceButton)
+        configButton = findViewById(R.id.configButton)
+        hintText = findViewById(R.id.hintText)
+    }
+
+    private fun setupClickListeners() {
+        findViewById<View>(R.id.permissionCamera).setOnClickListener {
+            requestCameraPermission()
         }
 
-        faceTrackingSwitch.isChecked = isFaceTrackingEnabled
+        findViewById<View>(R.id.permissionOverlay).setOnClickListener {
+            requestOverlayPermission()
+        }
 
-        faceTrackingSwitch.setOnCheckedChangeListener { _, isChecked ->
-            isFaceTrackingEnabled = isChecked
-            prefs.edit().putBoolean("face_tracking_enabled", isChecked).apply()
-            overlayView.setFaceTrackingEnabled(isChecked)
-            if (!isChecked) {
-                overlayView.updateResults(null, null, 0, 0)
-            } else if (faceLandmarker == null) {
-                initFaceLandmarker()
+        findViewById<View>(R.id.permissionAccessibility).setOnClickListener {
+            requestAccessibilityPermission()
+        }
+
+        startServiceButton.setOnClickListener {
+            startGestureService()
+        }
+        
+        configButton.setOnClickListener {
+            openGestureConfig()
+        }
+    }
+
+    private fun refreshPermissionStatus() {
+        // 相机权限
+        val hasCamera = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        cameraStatus.setTextColor(
+            ContextCompat.getColor(this, if (hasCamera) R.color.status_granted else R.color.status_pending)
+        )
+
+        // 悬浮窗权限
+        val hasOverlay = Settings.canDrawOverlays(this)
+        overlayStatus.text = if (hasOverlay) "已授权" else "未授权"
+        overlayStatus.setTextColor(
+            ContextCompat.getColor(this, if (hasOverlay) R.color.status_granted else R.color.status_pending)
+        )
+
+        // 无障碍权限
+        val hasAccessibility = isAccessibilityServiceEnabled()
+        accessibilityStatus.text = if (hasAccessibility) "已授权" else "未授权"
+        accessibilityStatus.setTextColor(
+            ContextCompat.getColor(this, if (hasAccessibility) R.color.status_granted else R.color.status_pending)
+        )
+
+        // 全部授权后显示启动按钮和配置按钮
+        val allGranted = hasCamera && hasOverlay && hasAccessibility
+        startServiceButton.visibility = if (allGranted) View.VISIBLE else View.GONE
+        configButton.visibility = if (allGranted) View.VISIBLE else View.GONE
+        hintText.visibility = if (allGranted) View.GONE else View.VISIBLE
+    }
+
+    private fun hasAllPermissions(): Boolean {
+        val hasCamera = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasOverlay = Settings.canDrawOverlays(this)
+        val hasAccessibility = isAccessibilityServiceEnabled()
+        return hasCamera && hasOverlay && hasAccessibility
+    }
+
+    private fun checkAndStartService() {
+        // 只刷新状态，不自动启动服务，让用户手动点击启动按钮
+        refreshPermissionStatus()
+    }
+
+    private fun requestCameraPermission() {
+        when {
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                refreshPermissionStatus()
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) -> {
+                showPermissionRationale("相机权限", "相机权限用于捕捉您的手势动作") {
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                }
+            }
+            else -> {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
         }
     }
 
-    /**
-     * 统一相机初始化逻辑（合并预览+图像分析，解决重复绑定问题）
-     */
-    private fun setupCamera() {
-        cameraProviderFuture.addListener({
-
-            val cameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder()
-                .build()
-                .also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(
-                    ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+    private fun requestOverlayPermission() {
+        if (!Settings.canDrawOverlays(this)) {
+            try {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
                 )
-                .build()
-                .also {
-                    it.setAnalyzer(cameraExecutor) { imageProxy ->
-                        processImage(imageProxy)
-                    }
-                }
-
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-            isFrontCamera = true
-
-            cameraProvider.unbindAll()
-
-            cameraProvider.bindToLifecycle(
-                this,
-                cameraSelector,
-                preview,
-                imageAnalysis
-            )
-
-            // 关键：不要传分辨率
-            overlayView.setCameraParams(
-                isFrontCamera = isFrontCamera
-            )
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    /**
-     * 初始化MediaPipe模型（逻辑不变）
-     */
-    private fun initMediaPipeModels() {
-        CoroutineScope(Dispatchers.IO).launch {
-            if (isFaceTrackingEnabled) {
-                val faceOptions = FaceLandmarkerOptions.builder()
-                    .setBaseOptions(
-                        BaseOptions.builder()
-                            .setModelAssetPath("face_landmarker.task")
-                            .build()
-                    )
-                    .setRunningMode(RunningMode.LIVE_STREAM)
-                    .setNumFaces(1)
-                    .setResultListener { result, inputImage ->
-                        runOnUiThread {
-                            overlayView.updateResults(
-                                result,
-                                null,
-                                inputImage.width,
-                                inputImage.height
-                            )
-                        }
-                    }
-                    .setErrorListener { error ->
-                        Log.e("FaceLandmarker", "检测错误: ${error.message}")
-                    }
-                    .build()
-                faceLandmarker = FaceLandmarker.createFromOptions(this@MainActivity, faceOptions)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(intent)
+                LogUtil.i(TAG, "已跳转到悬浮窗权限设置页面")
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "无法打开悬浮窗设置页面", e)
+                Toast.makeText(this, "无法打开设置页面", Toast.LENGTH_LONG).show()
             }
-
-            val handOptions = HandLandmarkerOptions.builder()
-                .setBaseOptions(
-                    BaseOptions.builder()
-                        .setModelAssetPath("hand_landmarker.task")
-                        .build()
-                )
-                .setRunningMode(RunningMode.LIVE_STREAM)
-                .setNumHands(2)
-                .setResultListener { result, inputImage ->
-                    runOnUiThread {
-                        overlayView.updateResults(
-                            null,
-                            result,
-                            inputImage.width,
-                            inputImage.height
-                        )
-
-                        val timestamp = SystemClock.uptimeMillis()
-                        val handPresent = result.landmarks().isNotEmpty()
-
-                        Log.d("Gesture", "Frame: handPresent=$handPresent, landmarks=${result.landmarks().size}")
-
-                        if (handPresent) {
-                            val indexMcp = result.landmarks()[0][5]
-                            Log.d("Gesture", "IndexMCP: x=${indexMcp.x()}, y=${indexMcp.y()}")
-                            val gestureResult = GestureNative.updateGesture(
-                                indexMcp.x(),
-                                indexMcp.y(),
-                                timestamp,
-                                true
-                            )
-                            Log.d("Gesture", "Gesture result: $gestureResult")
-                            when (gestureResult) {
-                                1 -> slidePrevPage() // swipe right: next page
-                                -1 -> slideNextPage() // swipe left: next page
-                            }
-                        } else {
-                            GestureNative.updateGesture(0f, 0f, timestamp, false)
-                        }
-
-                        if (isDebugModeEnabled) {
-                            val debugBuf = FloatArray(32)
-                            GestureNative.getDebugInfo(debugBuf)
-                            val dx = debugBuf[0]
-                            val vel = debugBuf[1]
-                            val count = debugBuf[3].toInt()
-                            val points = mutableListOf<Pair<Float, Float>>()
-                            for (i in 0 until count) {
-                                points.add(debugBuf[4 + i * 2] to debugBuf[4 + i * 2 + 1])
-                            }
-                            overlayView.updateDebugInfo(dx, vel, points)
-                        }
-                    }
-                }
-                .setErrorListener { error ->
-                    Log.e("HandLandmarker", "检测错误: ${error.message}")
-                }
-                .build()
-            handLandmarker = HandLandmarker.createFromOptions(this@MainActivity, handOptions)
         }
     }
 
-    private fun initFaceLandmarker() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val faceOptions = FaceLandmarkerOptions.builder()
-                .setBaseOptions(
-                    BaseOptions.builder()
-                        .setModelAssetPath("face_landmarker.task")
-                        .build()
-                )
-                .setRunningMode(RunningMode.LIVE_STREAM)
-                .setNumFaces(1)
-                .setResultListener { result, inputImage ->
-                    runOnUiThread {
-                        overlayView.updateResults(
-                            result,
-                            null,
-                            inputImage.width,
-                            inputImage.height
-                        )
-                    }
-                }
-                .setErrorListener { error ->
-                    Log.e("FaceLandmarker", "检测错误: ${error.message}")
-                }
-                .build()
-            faceLandmarker = FaceLandmarker.createFromOptions(this@MainActivity, faceOptions)
+    private fun requestAccessibilityPermission() {
+        if (!isAccessibilityServiceEnabled()) {
+            try {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(intent)
+                LogUtil.i(TAG, "已跳转到无障碍服务设置页面")
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "无法打开无障碍设置页面", e)
+                Toast.makeText(this, "无法打开设置页面", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
-    /**
-     * 处理相机帧（逻辑不变，依赖YuvToArgbConverter工具类）
-     */
-    private fun processImage(imageProxy: ImageProxy) {
-        val frameTime = SystemClock.uptimeMillis()
-        val mediaImage = imageProxy.image ?: run {
-            imageProxy.close()
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val serviceName = ComponentName(
+            this,
+            com.device.airgesture.service.AirGestureAccessibilityService::class.java
+        )
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        return enabledServices.contains(serviceName.flattenToString())
+    }
+
+    private fun startGestureService() {
+        if (!hasAllPermissions()) {
+            Toast.makeText(this, "请先获取全部权限", Toast.LENGTH_SHORT).show()
             return
         }
 
-        try {
-            val width = mediaImage.width
-            val height = mediaImage.height
-            val rotation = imageProxy.imageInfo.rotationDegrees
-
-            if (width != lastImageWidth || height != lastImageHeight || rotation != lastRotationDegrees) {
-                Log.d("BitmapReuse", "尺寸变化，重新分配缓冲区: ${width}x${height} rotation=$rotation")
-                cachedBitmap?.recycle()
-                cachedRotatedBitmap?.recycle()
-                cachedBitmap = null
-                cachedRotatedBitmap = null
-                cachedPixels = IntArray(width * height)
-                cachedMirrorPixels = if (isFrontCamera) IntArray(width * height) else null
-                lastImageWidth = width
-                lastImageHeight = height
-                lastRotationDegrees = rotation
-            }
-
-            val argbBitmap = YuvToArgbConverter.convertWithReuse(
-                mediaImage,
-                applyMirror = isFrontCamera,
-                reuseBitmap = cachedBitmap,
-                reusePixels = cachedPixels,
-                reuseMirrorPixels = cachedMirrorPixels
-            )
-            cachedBitmap = argbBitmap
-
-            val rotatedBitmap = when (rotation) {
-                90 -> YuvToArgbConverter.rotateBitmapWithReuse(argbBitmap, 90, cachedRotatedBitmap)
-                180 -> YuvToArgbConverter.rotateBitmapWithReuse(argbBitmap, 180, cachedRotatedBitmap)
-                270 -> YuvToArgbConverter.rotateBitmapWithReuse(argbBitmap, 270, cachedRotatedBitmap)
-                else -> argbBitmap
-            }
-            if (rotation != 0 && rotatedBitmap !== argbBitmap) {
-                cachedRotatedBitmap = rotatedBitmap
-            }
-
-            val mpImage: MPImage = BitmapImageBuilder(rotatedBitmap).build()
-
-            if (isFaceTrackingEnabled) {
-                faceLandmarker?.detectAsync(mpImage, frameTime)
-            }
-            handLandmarker?.detectAsync(mpImage, frameTime)
-
-        } catch (e: Exception) {
-            Log.e("ImageConversion", "图像转换失败: ${e.message}", e)
-        } finally {
-            imageProxy.close()
-        }
-    }
-
-    /**
-     * 检查权限（逻辑不变）
-     */
-    private fun allPermissionsGranted() = ContextCompat.checkSelfPermission(
-        this,
-        android.Manifest.permission.CAMERA
-    ) == PackageManager.PERMISSION_GRANTED
-
-    /**
-     * 权限请求回调（逻辑不变）
-     */
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_CAMERA_PERMISSION) {
-            if (allPermissionsGranted()) {
-                initMediaPipeModels()
-                setupCamera()
-            } else {
-                Toast.makeText(
-                    this,
-                    "相机权限被拒绝，应用无法正常工作",
-                    Toast.LENGTH_SHORT
-                ).show()
-                finish()
+        // 检查通知权限（Android 13+）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
             }
         }
+
+        LogUtil.d(TAG, "========== 启动手势识别服务 ==========")
+        
+        val intent = Intent(this, GestureRecognitionService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+            LogUtil.d(TAG, "使用 startForegroundService 启动")
+        } else {
+            startService(intent)
+            LogUtil.d(TAG, "使用 startService 启动")
+        }
+        
+        LogUtil.i(TAG, "手势识别服务启动命令已发送")
+        
+        Toast.makeText(this, "服务已启动，请在通知栏查看", Toast.LENGTH_SHORT).show()
     }
 
-    /**
-     * 释放资源（逻辑不变）
-     */
-    override fun onDestroy() {
-        super.onDestroy()
-        cameraExecutor.shutdown()
-        faceLandmarker?.close()
-        handLandmarker?.close()
-        cameraProvider?.unbindAll()
-        cachedBitmap?.recycle()
-        cachedRotatedBitmap?.recycle()
+    private fun isServiceRunning(): Boolean {
+        val manager = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+        @Suppress("DEPRECATION")
+        for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (GestureRecognitionService::class.java.name == service.service.className) {
+                return true
+            }
+        }
+        return false
     }
 
-    private fun slidePrevPage() {
-        Log.d("Gesture", "slidePrevPage() called - TODO: implement screen prev page")
+    private fun showPermissionRationale(title: String, message: String, onConfirm: () -> Unit) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("确定") { _, _ -> onConfirm() }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
-    private fun slideNextPage() {
-        Log.d("Gesture", "slideNextPage() called - TODO: implement screen next page")
+    private fun openGestureConfig() {
+        val intent = Intent(this, GestureConfigActivity::class.java)
+        startActivity(intent)
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
     }
 }
