@@ -223,16 +223,18 @@ class GestureRecognitionService : LifecycleService() {
                         }
                         
                         is GestureState.Tracking -> {
-                            // 正在追踪手势，检查静态手势
+                            // 正在追踪手势，同时检查静态手势
                             val staticGesture = staticGestureAnalyzer.analyzeStaticGesture(result)
                             if (staticGesture != Gesture.NONE) {
-                                // 使用状态管理器处理静态手势，避免重复触发
+                                // 使用状态管理器处理静态手势（内部会阻止 Tracking 超时）
                                 if (gestureStateManager.handleStaticGesture(staticGesture, timestamp)) {
                                     LogUtil.d(TAG, "Static gesture triggered: $staticGesture")
                                     GestureActionManager.getInstance().onGestureDetected(staticGesture)
                                     sendGestureDirection(0, staticGesture)
                                 }
                             } else {
+                                // 没有检测到静态手势，清除保持标志，恢复正常超时
+                                gestureStateManager.clearStaticGestureHold()
                                 sendGestureDirection(0)
                             }
                         }

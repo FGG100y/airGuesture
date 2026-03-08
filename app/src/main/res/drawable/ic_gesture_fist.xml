@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 握拳图标：停止/暂停语义 -->
+    <!-- 外圈 -->
+    <path
+        android:fillColor="#33FF9800"
+        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z"/>
+    <!-- 暂停符号 (两条竖线) -->
+    <path
+        android:fillColor="#FF9800"
+        android:pathData="M9,7h2v10H9z"/>
+    <path
+        android:fillColor="#FF9800"
+        android:pathData="M13,7h2v10h-2z"/>
+</vector>

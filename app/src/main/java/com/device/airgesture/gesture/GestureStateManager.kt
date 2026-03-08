@@ -22,6 +22,13 @@ class GestureStateManager {
     private var lastGestureTime: Long = 0
     private var lastStaticGesture: Gesture? = null
     private var staticGestureStartTime: Long = 0
+
+    /**
+     * 当前是否正在持续保持一个静态手势。
+     * 当此标志为 true 时，Tracking 状态不会因超时而重置，
+     * 从而让静态手势的 holdTime 计时器能正常累积。
+     */
+    private var holdingStaticGesture: Boolean = false
     
     /**
      * 更新手势状态
@@ -88,7 +95,8 @@ class GestureStateManager {
     ): GestureState {
         
         // 检查追踪超时
-        if (currentTime - state.startTime > GestureConfig.trackingTimeout) {
+        // 如果正在持续保持静态手势，则不超时——让静态手势的 holdTime 能正常累积
+        if (!holdingStaticGesture && currentTime - state.startTime > GestureConfig.trackingTimeout) {
             LogUtil.d(TAG, "Tracking timeout, resetting to Idle")
             return GestureState.Idle
         }
@@ -103,6 +111,8 @@ class GestureStateManager {
         // 检查是否达到手势识别条件
         if (distance >= GestureConfig.minSwipeDistance && duration <= GestureConfig.maxSwipeTime) {
             LogUtil.d(TAG, "Gesture detected, distance=$distance, duration=$duration")
+            // 手开始移动了，清除静态手势保持标志
+            holdingStaticGesture = false
             return GestureState.Recognizing(
                 startPoint = state.startPoint,
                 endPoint = palmCenter,
@@ -217,30 +227,56 @@ class GestureStateManager {
     
     /**
      * 处理静态手势
+     *
+     * 当检测到一个静态手势时由外部调用。此方法负责：
+     * 1. 记录该手势的首次出现时间
+     * 2. 判断是否已持续保持足够长的时间（staticHoldTime）
+     * 3. 设置 holdingStaticGesture 标志，防止 Tracking 状态超时重置
      */
     fun handleStaticGesture(
         gesture: Gesture,
         currentTime: Long = SystemClock.uptimeMillis()
     ): Boolean {
-        
+
         // 检查是否是同一个静态手势
         if (gesture == lastStaticGesture) {
+            // 持续保持同一手势 → 保持标志，阻止 Tracking 超时
+            holdingStaticGesture = true
+
+            val holdDuration = currentTime - staticGestureStartTime
+            LogUtil.d(TAG, "Static gesture $gesture held for ${holdDuration}ms / ${GestureConfig.staticHoldTime}ms")
+
             // 检查是否保持足够时间
-            if (currentTime - staticGestureStartTime >= GestureConfig.staticHoldTime) {
-                // 避免重复触发
+            if (holdDuration >= GestureConfig.staticHoldTime) {
+                // 避免重复触发（冷却检查）
                 if (currentTime - lastGestureTime >= GestureConfig.gestureCooldown) {
                     lastGestureTime = currentTime
                     lastStaticGesture = null  // 重置以允许再次触发
+                    holdingStaticGesture = false
                     return true
                 }
             }
         } else {
-            // 新的静态手势
+            // 新的静态手势，开始计时
             lastStaticGesture = gesture
             staticGestureStartTime = currentTime
+            holdingStaticGesture = true
+            LogUtil.d(TAG, "New static gesture detected: $gesture, starting hold timer")
         }
-        
+
         return false
+    }
+
+    /**
+     * 通知没有检测到静态手势（每帧由外部在无静态手势时调用）
+     * 清除保持标志，恢复正常的 Tracking 超时逻辑
+     */
+    fun clearStaticGestureHold() {
+        if (holdingStaticGesture) {
+            LogUtil.d(TAG, "Static gesture released, resuming normal tracking timeout")
+            holdingStaticGesture = false
+            lastStaticGesture = null
+        }
     }
     
     /**
@@ -250,6 +286,7 @@ class GestureStateManager {
         currentState = GestureState.Idle
         lastStaticGesture = null
         staticGestureStartTime = 0
+        holdingStaticGesture = false
     }
     
     /**

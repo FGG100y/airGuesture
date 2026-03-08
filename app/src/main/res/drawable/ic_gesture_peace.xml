@@ -3,12 +3,13 @@
     android:height="56dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- 背景圆 -->
+    <!-- 剪刀手/V字图标：Home 语义 -->
+    <!-- 外圈 -->
     <path
-        android:fillColor="#332196F3"
+        android:fillColor="#3300BCD4"
         android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z"/>
-    <!-- 粗体上箭头 (Material arrow_upward) -->
+    <!-- Home 图标 (Material home) -->
     <path
-        android:fillColor="#2196F3"
-        android:pathData="M4,12l1.41,1.41L11,7.83V20h2V7.83l5.58,5.59L20,12l-8,-8z"/>
+        android:fillColor="#00BCD4"
+        android:pathData="M10,20v-6h4v6h5v-8h3L12,3 2,12h3v8z"/>
 </vector>
