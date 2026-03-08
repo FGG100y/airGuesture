@@ -1,0 +1,193 @@
+package com.device.airgesture.action
+
+import android.accessibilityservice.AccessibilityService
+<<<<<<< HEAD
+import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_DPAD_LEFT
+import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_DPAD_RIGHT
+
+class KeyActionExecutor(private val service: AccessibilityService) : ActionExecutor {
+
+    override fun execute(action: Action): Boolean {
+        return when (action) {
+            Action.NEXT_PAGE -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
+            Action.PREV_PAGE -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
+            Action.SCREENSHOT -> false
+        }
+    }
+
+=======
+import android.accessibilityservice.AccessibilityService.*
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
+import android.os.Build
+import android.view.accessibility.AccessibilityNodeInfo
+import com.device.airgesture.utils.LogUtil
+
+class KeyActionExecutor(private val service: AccessibilityService) : ActionExecutor {
+
+    companion object {
+        private const val TAG = "KeyActionExecutor"
+        private const val SCROLL_DISTANCE = 500  // 增加滚动距离
+        private const val SCROLL_DURATION = 300L  // 增加滚动时长，更平滑
+        private const val SCROLL_COOLDOWN = 200L  // 滚动冷却时间
+        
+        private var lastScrollTime = 0L
+        private var isScrolling = false
+    }
+
+    override fun execute(action: Action): Boolean {
+        return try {
+            when (action) {
+                // 翻页控制
+                Action.NEXT_PAGE -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
+                Action.PREV_PAGE -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
+                
+                // 滚动控制
+                Action.SCROLL_UP -> performScroll(false)
+                Action.SCROLL_DOWN -> performScroll(true)
+                Action.SCROLL_STOP -> true // 停止滚动暂时不需要特殊操作
+                
+                // 系统功能
+                Action.SCREENSHOT -> performScreenshot()
+                Action.VOLUME_UP -> adjustVolume(true)
+                Action.VOLUME_DOWN -> adjustVolume(false)
+                Action.MUTE -> toggleMute()
+                
+                // 应用切换
+                Action.RECENT_APPS -> service.performGlobalAction(GLOBAL_ACTION_RECENTS)
+                Action.BACK -> service.performGlobalAction(GLOBAL_ACTION_BACK)
+                Action.HOME -> service.performGlobalAction(GLOBAL_ACTION_HOME)
+                
+                // 媒体控制
+                Action.PLAY_PAUSE -> performMediaAction(85) // KEYCODE_HEADSETHOOK
+                Action.NEXT_TRACK -> performMediaAction(87) // KEYCODE_MEDIA_NEXT  
+                Action.PREV_TRACK -> performMediaAction(88) // KEYCODE_MEDIA_PREVIOUS
+                
+                Action.NONE -> true
+            }
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "Failed to execute action: $action", e)
+            false
+        }
+    }
+
+    private fun performScreenshot(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            service.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+        } else {
+            LogUtil.w(TAG, "Screenshot not supported on API < 28")
+            false
+        }
+    }
+
+    private fun performScroll(down: Boolean): Boolean {
+        // 防止滚动过于频繁
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastScrollTime < SCROLL_COOLDOWN) {
+            LogUtil.d(TAG, "Scroll cooldown, skipping")
+            return false
+        }
+        
+        // 防止滚动冲突
+        if (isScrolling) {
+            LogUtil.d(TAG, "Already scrolling, skipping")
+            return false
+        }
+        
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            // Fallback to D-pad for older versions
+            lastScrollTime = currentTime
+            return service.performGlobalAction(
+                if (down) GLOBAL_ACTION_DPAD_DOWN else GLOBAL_ACTION_DPAD_UP
+            )
+        }
+
+        try {
+            isScrolling = true
+            val metrics = service.resources.displayMetrics
+            val centerX = metrics.widthPixels / 2f
+            val centerY = metrics.heightPixels / 2f
+
+            val gestureBuilder = GestureDescription.Builder()
+            val path = Path()
+
+            // 调整滚动起点和终点，使滚动更自然
+            val scrollStart = centerY
+            val scrollEnd = if (down) {
+                centerY + SCROLL_DISTANCE  // 向下滚动：手指向下移动
+            } else {
+                centerY - SCROLL_DISTANCE  // 向上滚动：手指向上移动
+            }
+
+            path.moveTo(centerX, scrollStart)
+            path.lineTo(centerX, scrollEnd)
+
+            val stroke = GestureDescription.StrokeDescription(path, 0, SCROLL_DURATION)
+            gestureBuilder.addStroke(stroke)
+
+            lastScrollTime = currentTime
+            
+            // 使用回调来重置滚动状态
+            val callback = object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    super.onCompleted(gestureDescription)
+                    isScrolling = false
+                    LogUtil.d(TAG, "Scroll gesture completed")
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    super.onCancelled(gestureDescription)
+                    isScrolling = false
+                    LogUtil.w(TAG, "Scroll gesture cancelled")
+                }
+            }
+
+            return service.dispatchGesture(gestureBuilder.build(), callback, null)
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "Failed to perform scroll", e)
+            isScrolling = false
+            return false
+        }
+    }
+
+    private fun adjustVolume(increase: Boolean): Boolean {
+        // Volume control through key events
+        // Note: AccessibilityService doesn't have direct volume control global actions
+        // We need to use a different approach
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                // Use gesture to simulate volume key press
+                val path = Path()
+                val metrics = service.resources.displayMetrics
+                val x = metrics.widthPixels * 0.9f
+                val y = metrics.heightPixels / 2f
+                
+                // Quick tap on the edge to trigger volume
+                path.moveTo(x, y)
+                val gestureBuilder = GestureDescription.Builder()
+                val stroke = GestureDescription.StrokeDescription(path, 0, 50)
+                gestureBuilder.addStroke(stroke)
+                service.dispatchGesture(gestureBuilder.build(), null, null)
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "Failed to adjust volume", e)
+            false
+        }
+    }
+
+    private fun toggleMute(): Boolean {
+        // Mute is not directly available in AccessibilityService
+        return false
+    }
+
+    private fun performMediaAction(action: Int): Boolean {
+        // Media actions are not directly available as global actions
+        // These would need to be implemented differently, possibly through intents
+        return false
+    }
+
+>>>>>>> feature/foreground-service
+    override fun isAvailable(): Boolean = true
+}

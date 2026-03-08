@@ -1,6 +1,10 @@
 package com.device.airgesture.action
 
 enum class Gesture {
+<<<<<<< HEAD
+    SWIPE_LEFT,
+    SWIPE_RIGHT
+=======
     // 滑动手势
     SWIPE_LEFT,
     SWIPE_RIGHT,
@@ -20,4 +24,5 @@ enum class Gesture {
     
     // 状态手势
     NONE            // 无手势
+>>>>>>> feature/foreground-service
 }

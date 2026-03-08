@@ -15,9 +15,13 @@ class AirGestureAccessibilityService : AccessibilityService() {
         LogUtil.d(TAG, "Service connected")
 
         keyExecutor = KeyActionExecutor(this)
+<<<<<<< HEAD
+        GestureActionManager.getInstance().setExecutor(keyExecutor)
+=======
         val manager = GestureActionManager.getInstance()
         manager.init(this)
         manager.setExecutor(keyExecutor)
+>>>>>>> feature/foreground-service
 
         LogUtil.d(TAG, "GestureActionManager initialized")
     }

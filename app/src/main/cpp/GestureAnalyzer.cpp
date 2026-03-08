@@ -127,14 +127,19 @@ GestureAnalyzer::detectSwing()
     debug_.dx=dx;
     debug_.velocity=vel;
 
-    bool disp_ok = fabs(dx) >= DISPLACEMENT_MIN;
+    // Check both horizontal and vertical displacement
+    float abs_dx = fabs(dx);
+    float abs_dy = fabs(dy);
+    
+    bool disp_x_ok = abs_dx >= DISPLACEMENT_MIN;
+    bool disp_y_ok = abs_dy >= DISPLACEMENT_MIN;
     bool vel_ok = vel >= SWING_VEL_MIN;
-    LOGD("detectSwing: dx=%.3f disp_min=%.3f %s vel=%.3f vel_min=%.3f %s",
-         dx, (float)DISPLACEMENT_MIN, disp_ok ? "✓" : "✗",
-         vel, (float)SWING_VEL_MIN, vel_ok ? "✓" : "✗");
+    
+    LOGD("detectSwing: dx=%.3f dy=%.3f disp_min=%.3f vel=%.3f vel_min=%.3f",
+         dx, dy, (float)DISPLACEMENT_MIN, vel, (float)SWING_VEL_MIN);
 
-    if(!disp_ok) return std::nullopt;
     if(!vel_ok) return std::nullopt;
+    if(!disp_x_ok && !disp_y_ok) return std::nullopt;
 
     float consistency = checkDirectionConsistency();
     bool dir_ok = consistency >= DIRECTION_CONSISTENCY_MIN;
@@ -143,8 +148,18 @@ GestureAnalyzer::detectSwing()
 
     if(!dir_ok) return std::nullopt;
 
-    Direction dir = dx > 0 ? Direction::RIGHT : Direction::LEFT;
-    LOGD("detectSwing: → %s", dir == Direction::RIGHT ? "RIGHT" : "LEFT");
+    // Determine primary direction based on larger displacement
+    Direction dir;
+    if(abs_dx > abs_dy) {
+        // Horizontal movement
+        dir = dx > 0 ? Direction::RIGHT : Direction::LEFT;
+        LOGD("detectSwing: → Horizontal %s", dir == Direction::RIGHT ? "RIGHT" : "LEFT");
+    } else {
+        // Vertical movement
+        dir = dy > 0 ? Direction::DOWN : Direction::UP;
+        LOGD("detectSwing: → Vertical %s", dir == Direction::DOWN ? "DOWN" : "UP");
+    }
+    
     return dir;
 }
 

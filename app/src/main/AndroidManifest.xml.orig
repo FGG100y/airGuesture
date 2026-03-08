@@ -37,6 +37,8 @@
             </intent-filter>
         </activity>
 
+<<<<<<< HEAD
+=======
         <activity
             android:name=".GestureConfigActivity"
             android:exported="false"
@@ -52,6 +54,7 @@
             android:name=".service.GestureOverlayService"
             android:exported="false" />
 
+>>>>>>> feature/foreground-service
         <service
             android:name=".service.AirGestureAccessibilityService"
             android:exported="true"

@@ -1,6 +1,11 @@
 package com.device.airgesture.action
 
 enum class Action {
+<<<<<<< HEAD
+    NEXT_PAGE,
+    PREV_PAGE,
+    SCREENSHOT
+=======
     // 翻页控制
     NEXT_PAGE,
     PREV_PAGE,
@@ -28,4 +33,5 @@ enum class Action {
     
     // 特殊动作
     NONE            // 无动作
+>>>>>>> feature/foreground-service
 }

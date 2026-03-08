@@ -1,11 +1,20 @@
 package com.device.airgesture
 
+<<<<<<< HEAD
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.SharedPreferences
+import android.provider.Settings
+import android.graphics.Bitmap
+=======
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+>>>>>>> feature/foreground-service
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
@@ -14,8 +23,28 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+<<<<<<< HEAD
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.framework.image.MPImage
+import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
+import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker.FaceLandmarkerOptions
+import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
+import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker.HandLandmarkerOptions
+import com.google.mediapipe.tasks.vision.core.RunningMode
+import com.device.airgesture.action.Gesture
+import com.device.airgesture.action.GestureActionManager
+import com.device.airgesture.utils.LogUtil
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+=======
 import com.device.airgesture.service.GestureRecognitionService
 import com.device.airgesture.utils.LogUtil
+>>>>>>> feature/foreground-service
 
 class MainActivity : AppCompatActivity() {
 
@@ -68,12 +97,18 @@ class MainActivity : AppCompatActivity() {
             requestCameraPermission()
         }
 
+<<<<<<< HEAD
+        // 检查无障碍服务权限
+        if (!isAccessibilityServiceEnabled()) {
+            showAccessibilityPermissionDialog()
+        }
+
+        faceTrackingSwitch.isChecked = isFaceTrackingEnabled
+=======
         findViewById<View>(R.id.permissionOverlay).setOnClickListener {
             requestOverlayPermission()
         }
-
-        findViewById<View>(R.id.permissionAccessibility).setOnClickListener {
-            requestAccessibilityPermission()
+>>>>>>> feature/foreground-service
 
         findViewById<View>(R.id.permissionAccessibility).setOnClickListener {
             requestAccessibilityPermission()
@@ -476,15 +511,14 @@ class MainActivity : AppCompatActivity() {
         return false
     }
 
+<<<<<<< HEAD
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val serviceName = ComponentName(
-            this,
-            com.device.airgesture.service.AirGestureAccessibilityService::class.java
-        )
+        val serviceName = ComponentName(this, com.device.airgesture.service.AirGestureAccessibilityService::class.java)
         val enabledServices = Settings.Secure.getString(
             contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
+
         return enabledServices.contains(serviceName.flattenToString())
     }
 
@@ -513,3 +547,23 @@ class MainActivity : AppCompatActivity() {
     }
 
 }
+=======
+    private fun showPermissionRationale(title: String, message: String, onConfirm: () -> Unit) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("确定") { _, _ -> onConfirm() }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun openGestureConfig() {
+        val intent = Intent(this, GestureConfigActivity::class.java)
+        startActivity(intent)
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
+    }
+}
+>>>>>>> feature/foreground-service

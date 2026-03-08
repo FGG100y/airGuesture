@@ -1,12 +1,21 @@
 package com.device.airgesture.action
 
+<<<<<<< HEAD
+=======
 import android.content.Context
 import android.content.SharedPreferences
+>>>>>>> feature/foreground-service
 import com.device.airgesture.utils.LogUtil
 
 class GestureActionManager private constructor() {
 
     private var executor: ActionExecutor? = null
+<<<<<<< HEAD
+    private val gestureToAction = mapOf(
+        Gesture.SWIPE_LEFT to Action.NEXT_PAGE,
+        Gesture.SWIPE_RIGHT to Action.PREV_PAGE
+    )
+=======
     private var preferences: SharedPreferences? = null
     
     // 默认手势映射
@@ -30,30 +39,42 @@ class GestureActionManager private constructor() {
         preferences = context.getSharedPreferences("gesture_config", Context.MODE_PRIVATE)
         loadConfiguration()
     }
+>>>>>>> feature/foreground-service
 
     fun setExecutor(executor: ActionExecutor) {
         this.executor = executor
     }
 
     fun onGestureDetected(gesture: Gesture) {
+<<<<<<< HEAD
+        val action = gestureToAction[gesture] ?: run {
+            LogUtil.w(TAG, "Unknown gesture: $gesture")
+=======
         if (gesture == Gesture.NONE) return
         
         val action = gestureToAction[gesture]
         if (action == null || action == Action.NONE) {
             LogUtil.d(TAG, "No action mapped for gesture: $gesture")
+>>>>>>> feature/foreground-service
             return
         }
 
         executor?.let { exec ->
             if (exec.isAvailable()) {
                 val success = exec.execute(action)
+<<<<<<< HEAD
+                LogUtil.d(TAG, "Execute $action, success: $success")
+=======
                 LogUtil.d(TAG, "Execute $action for $gesture, success: $success")
+>>>>>>> feature/foreground-service
             } else {
                 LogUtil.w(TAG, "Executor not available")
             }
         } ?: LogUtil.w(TAG, "Executor not set")
     }
 
+<<<<<<< HEAD
+=======
     fun setGestureAction(gesture: Gesture, action: Action) {
         gestureToAction[gesture] = action
         saveConfiguration(gesture, action)
@@ -98,6 +119,7 @@ class GestureActionManager private constructor() {
         preferences?.edit()?.putString("gesture_${gesture.name}", action.name)?.apply()
     }
 
+>>>>>>> feature/foreground-service
     fun isReady(): Boolean = executor != null && executor?.isAvailable() == true
 
     companion object {
