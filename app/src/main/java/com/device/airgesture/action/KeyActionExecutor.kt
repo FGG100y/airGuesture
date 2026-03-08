@@ -12,8 +12,12 @@ class KeyActionExecutor(private val service: AccessibilityService) : ActionExecu
 
     companion object {
         private const val TAG = "KeyActionExecutor"
-        private const val SCROLL_DISTANCE = 300
-        private const val SCROLL_DURATION = 200L
+        private const val SCROLL_DISTANCE = 500  // 增加滚动距离
+        private const val SCROLL_DURATION = 300L  // 增加滚动时长，更平滑
+        private const val SCROLL_COOLDOWN = 200L  // 滚动冷却时间
+        
+        private var lastScrollTime = 0L
+        private var isScrolling = false
     }
 
     override fun execute(action: Action): Boolean {
@@ -62,14 +66,29 @@ class KeyActionExecutor(private val service: AccessibilityService) : ActionExecu
     }
 
     private fun performScroll(down: Boolean): Boolean {
+        // 防止滚动过于频繁
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastScrollTime < SCROLL_COOLDOWN) {
+            LogUtil.d(TAG, "Scroll cooldown, skipping")
+            return false
+        }
+        
+        // 防止滚动冲突
+        if (isScrolling) {
+            LogUtil.d(TAG, "Already scrolling, skipping")
+            return false
+        }
+        
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             // Fallback to D-pad for older versions
+            lastScrollTime = currentTime
             return service.performGlobalAction(
                 if (down) GLOBAL_ACTION_DPAD_DOWN else GLOBAL_ACTION_DPAD_UP
             )
         }
 
         try {
+            isScrolling = true
             val metrics = service.resources.displayMetrics
             val centerX = metrics.widthPixels / 2f
             val centerY = metrics.heightPixels / 2f
@@ -77,20 +96,41 @@ class KeyActionExecutor(private val service: AccessibilityService) : ActionExecu
             val gestureBuilder = GestureDescription.Builder()
             val path = Path()
 
-            if (down) {
-                path.moveTo(centerX, centerY - SCROLL_DISTANCE)
-                path.lineTo(centerX, centerY + SCROLL_DISTANCE)
+            // 调整滚动起点和终点，使滚动更自然
+            val scrollStart = centerY
+            val scrollEnd = if (down) {
+                centerY + SCROLL_DISTANCE  // 向下滚动：手指向下移动
             } else {
-                path.moveTo(centerX, centerY + SCROLL_DISTANCE)
-                path.lineTo(centerX, centerY - SCROLL_DISTANCE)
+                centerY - SCROLL_DISTANCE  // 向上滚动：手指向上移动
             }
+
+            path.moveTo(centerX, scrollStart)
+            path.lineTo(centerX, scrollEnd)
 
             val stroke = GestureDescription.StrokeDescription(path, 0, SCROLL_DURATION)
             gestureBuilder.addStroke(stroke)
 
-            return service.dispatchGesture(gestureBuilder.build(), null, null)
+            lastScrollTime = currentTime
+            
+            // 使用回调来重置滚动状态
+            val callback = object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    super.onCompleted(gestureDescription)
+                    isScrolling = false
+                    LogUtil.d(TAG, "Scroll gesture completed")
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    super.onCancelled(gestureDescription)
+                    isScrolling = false
+                    LogUtil.w(TAG, "Scroll gesture cancelled")
+                }
+            }
+
+            return service.dispatchGesture(gestureBuilder.build(), callback, null)
         } catch (e: Exception) {
             LogUtil.e(TAG, "Failed to perform scroll", e)
+            isScrolling = false
             return false
         }
     }

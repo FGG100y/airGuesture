@@ -24,7 +24,8 @@ class GestureOverlayService : Service() {
     private val broadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val direction = intent?.getIntExtra(GestureRecognitionService.EXTRA_DIRECTION, 0) ?: 0
-            updateHandDirection(direction)
+            val gesture = intent?.getStringExtra(GestureRecognitionService.EXTRA_GESTURE)
+            updateGestureIcon(gesture, direction)
         }
     }
 
@@ -50,7 +51,8 @@ class GestureOverlayService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
         overlayView = ImageView(this).apply {
-            setImageResource(R.drawable.ic_hand_palm)
+            setImageResource(R.drawable.ic_gesture_idle)  // 使用新的空闲状态图标
+            scaleType = ImageView.ScaleType.FIT_CENTER
         }
 
         val params = WindowManager.LayoutParams(
@@ -80,26 +82,88 @@ class GestureOverlayService : Service() {
         }
     }
 
-    private fun updateHandDirection(direction: Int) {
+    private fun updateGestureIcon(gesture: String?, direction: Int) {
         // 取消之前的重置任务
         resetDirectionRunnable?.let { handler.removeCallbacks(it) }
 
-        val rotation = when (direction) {
-            -1 -> 90f   // 手势向左，图标指向左
-            1  -> -90f  // 手势向右，图标指向右
-            2  -> 0f    // 手势向上
-            -2 -> 180f  // 手势向下
-            else -> 0f  // 静止，居中
+        // 根据手势类型选择图标
+        val iconResource = when {
+            gesture == "OK_SIGN" || gesture == "FIST" -> R.drawable.ic_gesture_screenshot
+            direction == -1 || gesture == "SWIPE_LEFT" -> R.drawable.ic_gesture_left
+            direction == 1 || gesture == "SWIPE_RIGHT" -> R.drawable.ic_gesture_right
+            direction == 2 || gesture == "SWIPE_UP" -> R.drawable.ic_gesture_up
+            direction == -2 || gesture == "SWIPE_DOWN" -> R.drawable.ic_gesture_down
+            else -> R.drawable.ic_gesture_idle
         }
 
-        overlayView?.animate()?.rotation(rotation)?.setDuration(150)?.start()
-
-        // 500ms 无新手势则恢复居中
-        if (direction != 0) {
-            resetDirectionRunnable = Runnable {
-                overlayView?.animate()?.rotation(0f)?.setDuration(150)?.start()
+        // 更新图标并添加动画效果
+        overlayView?.let { view ->
+            // 如果是截图手势，添加特殊的脉冲效果
+            if (iconResource == R.drawable.ic_gesture_screenshot) {
+                view.animate()
+                    .scaleX(0.7f)
+                    .scaleY(0.7f)
+                    .alpha(0.5f)
+                    .setDuration(100)
+                    .withEndAction {
+                        view.setImageResource(iconResource)
+                        view.animate()
+                            .scaleX(1.2f)
+                            .scaleY(1.2f)
+                            .alpha(1f)
+                            .setDuration(150)
+                            .withEndAction {
+                                view.animate()
+                                    .scaleX(1f)
+                                    .scaleY(1f)
+                                    .setDuration(100)
+                                    .start()
+                            }
+                            .start()
+                    }
+                    .start()
+            } else if (iconResource != R.drawable.ic_gesture_idle) {
+                // 其他手势的动画效果
+                view.animate()
+                    .alpha(0.3f)
+                    .scaleX(0.8f)
+                    .scaleY(0.8f)
+                    .setDuration(80)
+                    .withEndAction {
+                        view.setImageResource(iconResource)
+                        view.animate()
+                            .alpha(1f)
+                            .scaleX(1.1f)
+                            .scaleY(1.1f)
+                            .setDuration(120)
+                            .withEndAction {
+                                view.animate()
+                                    .scaleX(1f)
+                                    .scaleY(1f)
+                                    .setDuration(80)
+                                    .start()
+                            }
+                            .start()
+                    }
+                    .start()
+            } else {
+                // 空闲状态，直接切换
+                view.setImageResource(iconResource)
+                view.animate()
+                    .alpha(0.7f)
+                    .scaleX(0.9f)
+                    .scaleY(0.9f)
+                    .setDuration(200)
+                    .start()
             }
-            handler.postDelayed(resetDirectionRunnable!!, 500)
+        }
+
+        // 自动恢复到空闲状态
+        if (iconResource != R.drawable.ic_gesture_idle) {
+            resetDirectionRunnable = Runnable {
+                updateGestureIcon(null, 0)  // 恢复到空闲状态
+            }
+            handler.postDelayed(resetDirectionRunnable!!, 800)  // 延长显示时间到800ms
         }
     }
 

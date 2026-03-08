@@ -16,9 +16,13 @@ import com.device.airgesture.GestureNative
 import com.device.airgesture.MainActivity
 import com.device.airgesture.R
 import com.device.airgesture.YuvToArgbConverter
+import android.graphics.PointF
 import com.device.airgesture.action.Gesture
 import com.device.airgesture.action.GestureActionManager
 import com.device.airgesture.analyzer.StaticGestureAnalyzer
+import com.device.airgesture.config.GestureConfig
+import com.device.airgesture.gesture.GestureState
+import com.device.airgesture.gesture.GestureStateManager
 import com.device.airgesture.utils.LogUtil
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -46,6 +50,7 @@ class GestureRecognitionService : LifecycleService() {
     private var handLandmarker: HandLandmarker? = null
     private lateinit var cameraExecutor: ExecutorService
     private val staticGestureAnalyzer = StaticGestureAnalyzer()
+    private val gestureStateManager = GestureStateManager()
 
     private var cachedBitmap: Bitmap? = null
     private var cachedRotatedBitmap: Bitmap? = null
@@ -61,6 +66,9 @@ class GestureRecognitionService : LifecycleService() {
         super.onCreate()
         LogUtil.d(TAG, "========== GestureRecognitionService onCreate ==========")
 
+        LogUtil.d(TAG, "初始化手势配置...")
+        GestureConfig.init(this)
+        
         LogUtil.d(TAG, "创建通知渠道...")
         createNotificationChannel()
         
@@ -180,43 +188,66 @@ class GestureRecognitionService : LifecycleService() {
                 val handPresent = result.landmarks().isNotEmpty()
 
                 if (handPresent) {
-                    // 先检查静态手势
-                    val staticGesture = staticGestureAnalyzer.analyzeStaticGesture(result)
-                    if (staticGesture != Gesture.NONE) {
-                        GestureActionManager.getInstance().onGestureDetected(staticGesture)
-                        sendGestureDirection(0) // 静态手势不需要方向指示
-                    } else {
-                        // 检查动态手势
-                        val indexMcp = result.landmarks()[0][5]
-                        val gestureResult = GestureNative.updateGesture(
-                            indexMcp.x(),
-                            indexMcp.y(),
-                            timestamp,
-                            true
-                        )
-
-                        when (gestureResult) {
-                            1 -> {
-                                GestureActionManager.getInstance().onGestureDetected(Gesture.SWIPE_RIGHT)
-                                sendGestureDirection(1)
+                    val landmarks = result.landmarks()[0]
+                    
+                    // 计算手掌中心（使用手腕和中指根部的中点）
+                    val wrist = landmarks[0]  // 手腕
+                    val middleMcp = landmarks[9]  // 中指根部
+                    val palmCenterX = (wrist.x() + middleMcp.x()) / 2f
+                    val palmCenterY = (wrist.y() + middleMcp.y()) / 2f
+                    val palmCenter = PointF(palmCenterX, palmCenterY)
+                    
+                    // 更新手势状态
+                    val gestureState = gestureStateManager.updateState(
+                        handPresent = true,
+                        palmCenter = palmCenter,
+                        currentTime = timestamp
+                    )
+                    
+                    // 根据状态处理手势
+                    when (gestureState) {
+                        is GestureState.Completed -> {
+                            // 动态手势完成
+                            LogUtil.d(TAG, "Gesture completed: ${gestureState.gesture} with confidence ${gestureState.confidence}")
+                            GestureActionManager.getInstance().onGestureDetected(gestureState.gesture)
+                            
+                            // 更新方向指示
+                            val direction = when (gestureState.gesture) {
+                                Gesture.SWIPE_LEFT -> -1
+                                Gesture.SWIPE_RIGHT -> 1
+                                Gesture.SWIPE_UP -> 2
+                                Gesture.SWIPE_DOWN -> -2
+                                else -> 0
                             }
-                            -1 -> {
-                                GestureActionManager.getInstance().onGestureDetected(Gesture.SWIPE_LEFT)
-                                sendGestureDirection(-1)
+                            sendGestureDirection(direction, gestureState.gesture)
+                        }
+                        
+                        is GestureState.Tracking -> {
+                            // 正在追踪手势，检查静态手势
+                            val staticGesture = staticGestureAnalyzer.analyzeStaticGesture(result)
+                            if (staticGesture != Gesture.NONE) {
+                                // 使用状态管理器处理静态手势，避免重复触发
+                                if (gestureStateManager.handleStaticGesture(staticGesture, timestamp)) {
+                                    LogUtil.d(TAG, "Static gesture triggered: $staticGesture")
+                                    GestureActionManager.getInstance().onGestureDetected(staticGesture)
+                                    sendGestureDirection(0, staticGesture)
+                                }
+                            } else {
+                                sendGestureDirection(0)
                             }
-                            2 -> {
-                                GestureActionManager.getInstance().onGestureDetected(Gesture.SWIPE_UP)
-                                sendGestureDirection(2)
-                            }
-                            -2 -> {
-                                GestureActionManager.getInstance().onGestureDetected(Gesture.SWIPE_DOWN)
-                                sendGestureDirection(-2)
-                            }
-                            else -> sendGestureDirection(0)
+                        }
+                        
+                        else -> {
+                            sendGestureDirection(0)
                         }
                     }
                 } else {
-                    GestureNative.updateGesture(0f, 0f, timestamp, false)
+                    // 没有检测到手
+                    gestureStateManager.updateState(
+                        handPresent = false,
+                        palmCenter = null,
+                        currentTime = timestamp
+                    )
                     sendGestureDirection(0)
                 }
             }
@@ -300,9 +331,10 @@ class GestureRecognitionService : LifecycleService() {
         LogUtil.d(TAG, "Overlay service stopped")
     }
 
-    private fun sendGestureDirection(direction: Int) {
+    private fun sendGestureDirection(direction: Int, gesture: Gesture? = null) {
         val intent = Intent(ACTION_GESTURE_DIRECTION).apply {
             putExtra(EXTRA_DIRECTION, direction)
+            gesture?.let { putExtra(EXTRA_GESTURE, it.name) }
             setPackage(packageName)
         }
         sendBroadcast(intent)
@@ -324,10 +356,11 @@ class GestureRecognitionService : LifecycleService() {
     }
 
     companion object {
-        private const val TAG = "GestureRecognitionSvc"
+        private const val TAG = "GestureRecognition"
         private const val CHANNEL_ID = "gesture_service_channel"
-        private const val NOTIFICATION_ID = 1
+        private const val NOTIFICATION_ID = 1001
         const val ACTION_GESTURE_DIRECTION = "com.airgesture.GESTURE_DIRECTION"
         const val EXTRA_DIRECTION = "direction"
+        const val EXTRA_GESTURE = "gesture"
     }
 }

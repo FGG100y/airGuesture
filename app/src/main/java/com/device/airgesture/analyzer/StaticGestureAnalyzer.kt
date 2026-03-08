@@ -15,6 +15,10 @@ class StaticGestureAnalyzer {
         // 手指弯曲阈值
         private const val FINGER_BENT_THRESHOLD = 0.3f
         private const val FINGER_STRAIGHT_THRESHOLD = 0.7f
+        
+        // 添加置信度阈值，避免误判
+        private const val MIN_GESTURE_CONFIDENCE = 0.7f
+        private const val ANGLE_THRESHOLD = 30f  // 角度阈值（度）
     }
 
     fun analyzeStaticGesture(result: HandLandmarkerResult): Gesture {
@@ -103,10 +107,16 @@ class StaticGestureAnalyzer {
     }
 
     private fun isOkSign(fingerStates: BooleanArray): Boolean {
-        // 拇指和食指形成圈，其他手指伸直
-        // 这里简化判断：拇指弯曲，食指弯曲，其他伸直
-        return !fingerStates[0] && !fingerStates[1] && 
-               fingerStates[2] && fingerStates[3] && fingerStates[4]
+        // OK手势：拇指和食指形成圈，其他手指伸直
+        // 更严格的判断条件，避免误判
+        val thumbBent = !fingerStates[0]
+        val indexBent = !fingerStates[1]
+        val middleStraight = fingerStates[2]
+        val ringStraight = fingerStates[3]
+        val pinkyStraight = fingerStates[4]
+        
+        // 需要中指、无名指、小指都伸直，拇指和食指都弯曲
+        return thumbBent && indexBent && middleStraight && ringStraight && pinkyStraight
     }
 
     private fun isPeaceSign(fingerStates: BooleanArray): Boolean {
