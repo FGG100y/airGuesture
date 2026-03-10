@@ -166,6 +166,11 @@ class GestureStateManager {
     
     /**
      * 识别手势类型
+     *
+     * 横屏模式说明：
+     * - 强制横屏时，x/y 坐标轴相对于用户视角需要交换
+     * - 用户看到的"左右"对应 y 轴变化，"上下"对应 x 轴变化
+     * - 交换后：dx 判定上下，dy 判定左右
      */
     private fun recognizeGesture(
         startPoint: PointF,
@@ -173,8 +178,15 @@ class GestureStateManager {
         duration: Long
     ): Gesture {
         
-        val dx = endPoint.x - startPoint.x
-        val dy = endPoint.y - startPoint.y
+        // 横屏模式：交换 x/y 轴
+        // 用户视角的"左右"对应 y 轴，"上下"对应 x 轴
+        val rawDx = endPoint.x - startPoint.x
+        val rawDy = endPoint.y - startPoint.y
+        
+        // 交换坐标轴（横屏模式）
+        val dx = rawDy  // 原 y 轴 → 水平方向
+        val dy = rawDx  // 原 x 轴 → 垂直方向
+        
         val distance = sqrt(dx * dx + dy * dy)
         val velocity = distance / (duration / 1000f)
         
@@ -187,11 +199,11 @@ class GestureStateManager {
         // 判断主要方向
         return when {
             abs(dx) > abs(dy) -> {
-                // 水平移动
+                // 水平移动（用户视角的左右）
                 if (dx > 0) Gesture.SWIPE_RIGHT else Gesture.SWIPE_LEFT
             }
             abs(dy) > GestureConfig.minSwipeDistance -> {
-                // 垂直移动
+                // 垂直移动（用户视角的上下）
                 if (dy > 0) Gesture.SWIPE_DOWN else Gesture.SWIPE_UP
             }
             else -> Gesture.NONE

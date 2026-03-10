@@ -189,18 +189,29 @@ class GestureRecognitionService : LifecycleService() {
 
                 if (handPresent) {
                     val landmarks = result.landmarks()[0]
-                    
-                    // 计算手掌中心（使用手腕和中指根部的中点）
-                    val wrist = landmarks[0]  // 手腕
-                    val middleMcp = landmarks[9]  // 中指根部
+
+                    // 计算四指平均位置（食、中、无名、小指尖的平均）
+                    // 用于滑动手势检测，模拟四指滑动的自然体验
+                    val indexTip = landmarks[8]
+                    val middleTip = landmarks[12]
+                    val ringTip = landmarks[16]
+                    val pinkyTip = landmarks[20]
+
+                    val fingerCenterX = (indexTip.x() + middleTip.x() + ringTip.x() + pinkyTip.x()) / 4f
+                    val fingerCenterY = (indexTip.y() + middleTip.y() + ringTip.y() + pinkyTip.y()) / 4f
+                    val fingerCenter = PointF(fingerCenterX, fingerCenterY)
+
+                    // 保留手掌中心用于静态手势分析
+                    val wrist = landmarks[0]
+                    val middleMcp = landmarks[9]
                     val palmCenterX = (wrist.x() + middleMcp.x()) / 2f
                     val palmCenterY = (wrist.y() + middleMcp.y()) / 2f
                     val palmCenter = PointF(palmCenterX, palmCenterY)
                     
-                    // 更新手势状态
+                    // 更新手势状态（使用四指中心，用于滑动手势检测）
                     val gestureState = gestureStateManager.updateState(
                         handPresent = true,
-                        palmCenter = palmCenter,
+                        palmCenter = fingerCenter,
                         currentTime = timestamp
                     )
                     

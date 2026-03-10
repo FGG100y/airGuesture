@@ -20,54 +20,57 @@ object GestureConfig {
     }
     
     // ========== 动态手势参数 ==========
-    
+
     /**
      * 最小滑动距离（归一化坐标系，0-1）
-     * 增大此值可以减少误触发，但需要更大的手势幅度
+     * 减小此值使滑动更容易触发（四指滑动不需要很大幅度）
      */
-    var minSwipeDistance = 0.08f
+    var minSwipeDistance = 0.05f
         set(value) {
             field = value
             saveFloat("min_swipe_distance", value)
         }
-    
+
     /**
      * 最大滑动时间（毫秒）
      * 手势必须在此时间内完成，否则不识别
+     * 放宽以适应更自然的速度
      */
-    var maxSwipeTime = 800L
+    var maxSwipeTime = 1000L
         set(value) {
             field = value
             saveLong("max_swipe_time", value)
         }
-    
+
     /**
      * 最小滑动速度（归一化坐标/秒）
-     * 增大此值需要更快的手势速度
+     * 减小此值使慢速滑动也能触发
      */
-    var minSwipeVelocity = 0.15f
+    var minSwipeVelocity = 0.10f
         set(value) {
             field = value
             saveFloat("min_swipe_velocity", value)
         }
-    
+
     /**
      * 手势冷却时间（毫秒）
      * 两次手势之间的最小间隔
+     * 增加以防止自然恢复时触发相反手势
      */
-    var gestureCooldown = 300L
+    var gestureCooldown = 1000L
         set(value) {
             field = value
             saveLong("gesture_cooldown", value)
         }
     
     // ========== 静态手势参数 ==========
-    
+
     /**
      * 静态手势保持时间（毫秒）
      * 静态手势需要保持的最短时间
+     * 增加以减少误触发（尤其是截图表的 OK 手势）
      */
-    var staticHoldTime = 500L
+    var staticHoldTime = 800L
         set(value) {
             field = value
             saveLong("static_hold_time", value)
@@ -232,27 +235,27 @@ object GestureConfig {
      */
     fun resetToDefaults() {
         preferences?.edit()?.clear()?.apply()
-        
-        // 重置为默认值
-        minSwipeDistance = 0.08f
-        maxSwipeTime = 800L
-        minSwipeVelocity = 0.15f
-        gestureCooldown = 300L
-        
-        staticHoldTime = 500L
+
+        // 重置为默认值（四指滑动模式，更宽松的滑动，更严格的静态手势，防止恢复误触发）
+        minSwipeDistance = 0.05f
+        maxSwipeTime = 1000L
+        minSwipeVelocity = 0.10f
+        gestureCooldown = 1000L
+
+        staticHoldTime = 800L
         staticConfidenceThreshold = 0.7f
-        
+
         scrollDistance = 500
         scrollDuration = 300L
         scrollCooldown = 200L
-        
+
         trackingTimeout = 1000L
         trackingSmoothness = 0.7f
-        
+
         minHandDetectionConfidence = 0.5f
         minTrackingConfidence = 0.5f
         minHandPresenceConfidence = 0.5f
-        
+
         debugEnabled = true
         showGestureTrail = false
     }
